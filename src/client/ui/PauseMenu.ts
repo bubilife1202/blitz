@@ -35,12 +35,12 @@ export class PauseMenu {
       0.7
     );
     this.overlay.setScrollFactor(0);
-    this.overlay.setDepth(4000);
+    this.overlay.setDepth(6000); // Above gameOverText (5000)
 
     // 컨테이너
     this.container = this.scene.add.container(width / 2, height / 2);
     this.container.setScrollFactor(0);
-    this.container.setDepth(4001);
+    this.container.setDepth(6001); // Above overlay
 
     // 메뉴 박스 배경
     const menuBg = this.scene.add.rectangle(0, 0, 300, 350, 0x1a1a2e);

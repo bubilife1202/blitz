@@ -375,7 +375,12 @@ export class GameScene extends Phaser.Scene {
 
     // 키보드 단축키
     this.input.keyboard?.on('keydown-ESC', () => {
-      this.togglePause();
+      // 게임 오버 상태면 메인 메뉴로
+      if (this.gameState.isGameOver()) {
+        this.goToMainMenu();
+      } else {
+        this.togglePause();
+      }
     });
     
     this.input.keyboard?.on('keydown-SPACE', () => {

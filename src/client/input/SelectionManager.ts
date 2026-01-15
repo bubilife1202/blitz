@@ -62,7 +62,7 @@ export class SelectionManager {
     // 선택 박스 생성
     this.selectionBox = this.scene.add.rectangle(x, y, 0, 0, 0x00ff00, 0.2);
     this.selectionBox.setStrokeStyle(1, 0x00ff00);
-    this.selectionBox.setDepth(1000);
+    this.selectionBox.setDepth(1100); // Above fog (1000)
     this.selectionBox.setOrigin(0, 0);
   }
 
