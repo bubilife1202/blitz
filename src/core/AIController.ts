@@ -1,0 +1,627 @@
+// ==========================================
+// AIController - 향상된 AI 로직
+// ==========================================
+
+import type { GameState } from './GameState';
+import type { Entity } from './ecs/Entity';
+import type { PathfindingService } from './PathfindingService';
+import { Position } from './components/Position';
+import { Owner } from './components/Owner';
+import { Unit } from './components/Unit';
+import { Building } from './components/Building';
+import { Movement } from './components/Movement';
+import { Combat } from './components/Combat';
+import { Gatherer, GathererState } from './components/Gatherer';
+import { ProductionQueue } from './components/ProductionQueue';
+import { ResearchQueue } from './components/ResearchQueue';
+import { Selectable } from './components/Selectable';
+import { Resource } from './components/Resource';
+import { UnitType, BuildingType, UnitCategory, AIDifficulty, type PlayerId } from '@shared/types';
+import { UNIT_STATS, BUILDING_STATS, canBuildBuilding, canTrainUnit } from '@shared/constants';
+
+export enum AIState {
+  BUILDING_UP = 'building_up',
+  ATTACKING = 'attacking',
+  DEFENDING = 'defending',
+}
+
+interface BuildTask {
+  buildingType: BuildingType;
+  builderId: number;
+  position: { x: number; y: number };
+}
+
+export class AIController {
+  private gameState: GameState;
+  private pathfinding: PathfindingService | null = null;
+  private playerId: PlayerId;
+  private difficulty: AIDifficulty;
+  private state: AIState = AIState.BUILDING_UP;
+  private lastAttackTick: number = 0;
+  private attackInterval: number = 600; // ~37초마다 공격
+  private targetPlayerId: PlayerId = 1;
+  
+  // 건설 관련
+  private pendingBuild: BuildTask | null = null;
+  private lastBuildCheck: number = 0;
+  private buildCheckInterval: number = 32; // 2초마다 건설 체크
+  
+  // 자원 채취 관련
+  private lastGatherCheck: number = 0;
+  private gatherCheckInterval: number = 48; // 3초마다 채취 체크
+  
+  // 난이도별 공격 유닛 수 최소값
+  private minAttackUnits: number = 6;
+
+  constructor(
+    gameState: GameState, 
+    playerId: PlayerId, 
+    pathfinding?: PathfindingService,
+    difficulty: AIDifficulty = AIDifficulty.NORMAL
+  ) {
+    this.gameState = gameState;
+    this.playerId = playerId;
+    this.pathfinding = pathfinding || null;
+    this.difficulty = difficulty;
+    
+    // 난이도별 설정 조정
+    this.applyDifficultySettings();
+  }
+
+  private applyDifficultySettings(): void {
+    switch (this.difficulty) {
+      case AIDifficulty.EASY:
+        this.attackInterval = 960; // ~1분마다 공격
+        this.buildCheckInterval = 64; // 4초마다 건설 체크 (느림)
+        this.gatherCheckInterval = 80; // 5초마다 채취 체크 (느림)
+        this.minAttackUnits = 4; // 더 적은 유닛으로 공격
+        break;
+      case AIDifficulty.NORMAL:
+        this.attackInterval = 600; // ~37초마다 공격
+        this.buildCheckInterval = 32; // 2초마다 건설 체크
+        this.gatherCheckInterval = 48; // 3초마다 채취 체크
+        this.minAttackUnits = 6;
+        break;
+      case AIDifficulty.HARD:
+        this.attackInterval = 400; // ~25초마다 공격 (공격적)
+        this.buildCheckInterval = 16; // 1초마다 건설 체크 (빠름)
+        this.gatherCheckInterval = 32; // 2초마다 채취 체크 (빠름)
+        this.minAttackUnits = 8; // 더 많은 유닛으로 공격
+        break;
+    }
+  }
+
+  setPathfinding(pathfinding: PathfindingService): void {
+    this.pathfinding = pathfinding;
+  }
+
+  update(): void {
+    const currentTick = this.gameState.getCurrentTick();
+    const resources = this.gameState.getPlayerResources(this.playerId);
+    if (!resources) return;
+
+    // 건설 작업 처리
+    if (currentTick - this.lastBuildCheck > this.buildCheckInterval) {
+      this.processBuildOrder(resources);
+      this.lastBuildCheck = currentTick;
+    }
+    
+    // 유닛 생산
+    this.executeProduction(resources);
+    
+    // 자원 채취 관리
+    if (currentTick - this.lastGatherCheck > this.gatherCheckInterval) {
+      this.manageGatherers();
+      this.lastGatherCheck = currentTick;
+    }
+
+    // 공격 타이밍 체크
+    if (currentTick - this.lastAttackTick > this.attackInterval) {
+      const combatUnits = this.getCombatUnits();
+      if (combatUnits.length >= this.minAttackUnits) {
+        this.state = AIState.ATTACKING;
+        this.launchAttack();
+        this.lastAttackTick = currentTick;
+      }
+    }
+  }
+
+  // ==========================================
+  // 건설 관리
+  // ==========================================
+  
+  private processBuildOrder(resources: { minerals: number; gas: number; supply: number; supplyMax: number }): void {
+    // 진행 중인 건설 작업 처리
+    if (this.pendingBuild) {
+      this.executePendingBuild();
+      return;
+    }
+    
+    const myBuildings = this.getMyBuildings();
+    const buildingTypes = myBuildings.map(b => b.getComponent<Building>(Building)!.buildingType);
+    
+    // 서플라이 막힘 체크 - 최우선
+    if (resources.supply >= resources.supplyMax - 2) {
+      if (resources.minerals >= BUILDING_STATS[BuildingType.SUPPLY_DEPOT].mineralCost) {
+        this.planBuilding(BuildingType.SUPPLY_DEPOT);
+        return;
+      }
+    }
+    
+    // 배럭 없으면 건설
+    const barracksCount = buildingTypes.filter(t => t === BuildingType.BARRACKS).length;
+    if (barracksCount === 0 && resources.minerals >= BUILDING_STATS[BuildingType.BARRACKS].mineralCost) {
+      this.planBuilding(BuildingType.BARRACKS);
+      return;
+    }
+    
+    // Engineering Bay 건설 (테크 진행)
+    const hasEngineeringBay = buildingTypes.includes(BuildingType.ENGINEERING_BAY);
+    if (!hasEngineeringBay && barracksCount > 0 && resources.minerals >= BUILDING_STATS[BuildingType.ENGINEERING_BAY].mineralCost) {
+      this.planBuilding(BuildingType.ENGINEERING_BAY);
+      return;
+    }
+    
+    // 팩토리 건설
+    const factoryCount = buildingTypes.filter(t => t === BuildingType.FACTORY).length;
+    if (factoryCount === 0 && barracksCount > 0 && 
+        resources.minerals >= BUILDING_STATS[BuildingType.FACTORY].mineralCost &&
+        resources.gas >= BUILDING_STATS[BuildingType.FACTORY].gasCost) {
+      if (canBuildBuilding(BuildingType.FACTORY, buildingTypes)) {
+        this.planBuilding(BuildingType.FACTORY);
+        return;
+      }
+    }
+    
+    // 두 번째 배럭
+    if (barracksCount === 1 && resources.minerals >= BUILDING_STATS[BuildingType.BARRACKS].mineralCost + 100) {
+      this.planBuilding(BuildingType.BARRACKS);
+      return;
+    }
+    
+    // Armory 건설
+    const hasArmory = buildingTypes.includes(BuildingType.ARMORY);
+    if (!hasArmory && factoryCount > 0 && 
+        resources.minerals >= BUILDING_STATS[BuildingType.ARMORY].mineralCost &&
+        resources.gas >= BUILDING_STATS[BuildingType.ARMORY].gasCost) {
+      if (canBuildBuilding(BuildingType.ARMORY, buildingTypes)) {
+        this.planBuilding(BuildingType.ARMORY);
+        return;
+      }
+    }
+  }
+  
+  private planBuilding(buildingType: BuildingType): void {
+    const scvs = this.getIdleSCVs();
+    if (scvs.length === 0) return;
+    
+    const builder = scvs[0];
+    const buildPos = this.findBuildLocation(buildingType);
+    
+    if (!buildPos) return;
+    
+    this.pendingBuild = {
+      buildingType,
+      builderId: builder.id,
+      position: buildPos,
+    };
+    
+    // SCV를 건설 위치로 이동
+    const movement = builder.getComponent<Movement>(Movement);
+    if (movement) {
+      movement.setTarget(buildPos.x, buildPos.y);
+    }
+    
+    // 채취 중단
+    const gatherer = builder.getComponent<Gatherer>(Gatherer);
+    if (gatherer) {
+      gatherer.stop();
+    }
+  }
+  
+  private executePendingBuild(): void {
+    if (!this.pendingBuild) return;
+    
+    const builder = this.gameState.getEntity(this.pendingBuild.builderId);
+    if (!builder) {
+      this.pendingBuild = null;
+      return;
+    }
+    
+    const builderPos = builder.getComponent<Position>(Position);
+    if (!builderPos) {
+      this.pendingBuild = null;
+      return;
+    }
+    
+    // 건설 위치에 도착했는지 확인
+    const dist = Math.sqrt(
+      Math.pow(builderPos.x - this.pendingBuild.position.x, 2) +
+      Math.pow(builderPos.y - this.pendingBuild.position.y, 2)
+    );
+    
+    if (dist < 60) {
+      // 건설 시작
+      this.createBuilding(this.pendingBuild.buildingType, this.pendingBuild.position.x, this.pendingBuild.position.y);
+      this.pendingBuild = null;
+    }
+  }
+  
+  private findBuildLocation(buildingType: BuildingType): { x: number; y: number } | null {
+    const stats = BUILDING_STATS[buildingType];
+    const tileSize = this.gameState.config.tileSize;
+    
+    // 기존 커맨드센터 위치 찾기
+    const commandCenter = this.getMyBuildings().find(b => 
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+    );
+    
+    if (!commandCenter) return null;
+    
+    const ccPos = commandCenter.getComponent<Position>(Position);
+    if (!ccPos) return null;
+    
+    // 나선형 탐색으로 빈 공간 찾기
+    const baseTileX = Math.floor(ccPos.x / tileSize);
+    const baseTileY = Math.floor(ccPos.y / tileSize);
+    
+    for (let radius = 3; radius < 15; radius++) {
+      for (let angle = 0; angle < 8; angle++) {
+        const offsetX = Math.round(Math.cos(angle * Math.PI / 4) * radius);
+        const offsetY = Math.round(Math.sin(angle * Math.PI / 4) * radius);
+        
+        const tileX = baseTileX + offsetX;
+        const tileY = baseTileY + offsetY;
+        
+        if (this.canPlaceBuilding(tileX, tileY, stats.size.width, stats.size.height)) {
+          return {
+            x: tileX * tileSize + (stats.size.width * tileSize) / 2,
+            y: tileY * tileSize + (stats.size.height * tileSize) / 2,
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  private canPlaceBuilding(tileX: number, tileY: number, width: number, height: number): boolean {
+    const config = this.gameState.config;
+    
+    // 맵 경계 체크
+    if (tileX < 1 || tileY < 1 || 
+        tileX + width >= config.mapWidth - 1 || 
+        tileY + height >= config.mapHeight - 1) {
+      return false;
+    }
+    
+    // 기존 건물과 겹침 체크
+    for (const entity of this.gameState.getAllEntities()) {
+      const building = entity.getComponent<Building>(Building);
+      const position = entity.getComponent<Position>(Position);
+      
+      if (!building || !position) continue;
+      
+      const bTileX = Math.floor(position.x / config.tileSize) - Math.floor(building.width / 2);
+      const bTileY = Math.floor(position.y / config.tileSize) - Math.floor(building.height / 2);
+      
+      // AABB 충돌 체크
+      if (tileX < bTileX + building.width + 1 &&
+          tileX + width + 1 > bTileX &&
+          tileY < bTileY + building.height + 1 &&
+          tileY + height + 1 > bTileY) {
+        return false;
+      }
+    }
+    
+    // 자원과 겹침 체크
+    for (const entity of this.gameState.getAllEntities()) {
+      const resource = entity.getComponent<Resource>(Resource);
+      const position = entity.getComponent<Position>(Position);
+      
+      if (!resource || !position) continue;
+      
+      const rTileX = Math.floor(position.x / config.tileSize);
+      const rTileY = Math.floor(position.y / config.tileSize);
+      
+      if (tileX <= rTileX + 1 && tileX + width >= rTileX &&
+          tileY <= rTileY + 1 && tileY + height >= rTileY) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  private createBuilding(buildingType: BuildingType, x: number, y: number): void {
+    const stats = BUILDING_STATS[buildingType];
+    const resources = this.gameState.getPlayerResources(this.playerId);
+    
+    if (!resources || 
+        resources.minerals < stats.mineralCost || 
+        resources.gas < stats.gasCost) {
+      return;
+    }
+    
+    // 자원 차감
+    this.gameState.modifyPlayerResources(this.playerId, {
+      minerals: -stats.mineralCost,
+      gas: -stats.gasCost,
+    });
+    
+    // 건물 생성
+    const entity = this.gameState.createEntity();
+    entity
+      .addComponent(new Position(x, y))
+      .addComponent(new Selectable(32))
+      .addComponent(new Owner(this.playerId))
+      .addComponent(new Building(buildingType, false)); // 건설 중
+    
+    // 생산 가능 건물에 ProductionQueue 추가
+    if (stats.canProduce && stats.canProduce.length > 0) {
+      entity.addComponent(new ProductionQueue(5));
+    }
+
+    // 연구 가능 건물에 ResearchQueue 추가
+    if (stats.canResearch && stats.canResearch.length > 0) {
+      entity.addComponent(new ResearchQueue());
+    }
+    
+    // 패스파인딩 장애물 등록
+    if (this.pathfinding) {
+      const tileSize = this.gameState.config.tileSize;
+      const tileX = Math.floor(x / tileSize);
+      const tileY = Math.floor(y / tileSize);
+      
+      for (let dy = 0; dy < stats.size.height; dy++) {
+        for (let dx = 0; dx < stats.size.width; dx++) {
+          this.pathfinding.setObstacle(tileX + dx - 1, tileY + dy - 1);
+        }
+      }
+    }
+    
+    console.log(`AI building ${buildingType} at (${x}, ${y})`);
+  }
+
+  // ==========================================
+  // 유닛 생산
+  // ==========================================
+  
+  private executeProduction(resources: { minerals: number; gas: number; supply: number; supplyMax: number }): void {
+    const myBuildings = this.getMyBuildings();
+    const buildingTypes = myBuildings.map(b => b.getComponent<Building>(Building)!.buildingType);
+    
+    for (const building of myBuildings) {
+      const buildingComp = building.getComponent<Building>(Building)!;
+      const queue = building.getComponent<ProductionQueue>(ProductionQueue);
+
+      if (!queue || buildingComp.isConstructing) continue;
+      if (!queue.canQueue()) continue;
+
+      // 커맨드센터: SCV 생산
+      if (buildingComp.buildingType === BuildingType.COMMAND_CENTER) {
+        const scvCount = this.getMyUnits().filter(u => 
+          u.getComponent<Unit>(Unit)?.unitType === UnitType.SCV
+        ).length;
+
+        if (scvCount < 12 && this.canAffordUnit(UnitType.SCV, resources)) {
+          this.trainUnit(queue, UnitType.SCV, resources);
+        }
+      }
+      
+      // 배럭: 보병 생산
+      if (buildingComp.buildingType === BuildingType.BARRACKS) {
+        // 우선순위: Marine > Firebat > Medic
+        if (this.canAffordUnit(UnitType.MARINE, resources) && canTrainUnit(UnitType.MARINE, buildingTypes)) {
+          this.trainUnit(queue, UnitType.MARINE, resources);
+        } else if (this.canAffordUnit(UnitType.FIREBAT, resources) && canTrainUnit(UnitType.FIREBAT, buildingTypes)) {
+          // 파이어뱃은 가스가 충분할 때만
+          if (resources.gas >= 50) {
+            this.trainUnit(queue, UnitType.FIREBAT, resources);
+          }
+        }
+      }
+      
+      // 팩토리: 차량 생산
+      if (buildingComp.buildingType === BuildingType.FACTORY) {
+        // Vulture 우선 (가스 안 씀)
+        if (this.canAffordUnit(UnitType.VULTURE, resources) && canTrainUnit(UnitType.VULTURE, buildingTypes)) {
+          this.trainUnit(queue, UnitType.VULTURE, resources);
+        } else if (this.canAffordUnit(UnitType.SIEGE_TANK, resources) && canTrainUnit(UnitType.SIEGE_TANK, buildingTypes)) {
+          this.trainUnit(queue, UnitType.SIEGE_TANK, resources);
+        }
+      }
+    }
+  }
+  
+  private canAffordUnit(unitType: UnitType, resources: { minerals: number; gas: number; supply: number; supplyMax: number }): boolean {
+    const stats = UNIT_STATS[unitType];
+    return resources.minerals >= stats.mineralCost &&
+           resources.gas >= stats.gasCost &&
+           resources.supply + stats.supplyCost <= resources.supplyMax;
+  }
+  
+  private trainUnit(queue: ProductionQueue, unitType: UnitType, _resources: { minerals: number; gas: number; supply: number; supplyMax: number }): void {
+    const stats = UNIT_STATS[unitType];
+    
+    queue.addToQueue(unitType, stats.buildTime);
+    this.gameState.modifyPlayerResources(this.playerId, {
+      minerals: -stats.mineralCost,
+      gas: -stats.gasCost,
+    });
+  }
+
+  // ==========================================
+  // 자원 채취 관리
+  // ==========================================
+  
+  private manageGatherers(): void {
+    const idleSCVs = this.getIdleSCVs();
+    if (idleSCVs.length === 0) return;
+    
+    // 가장 가까운 자원 찾기
+    for (const scv of idleSCVs) {
+      const pos = scv.getComponent<Position>(Position);
+      if (!pos) continue;
+      
+      const nearestMineral = this.findNearestMineral(pos.x, pos.y);
+      if (!nearestMineral) continue;
+      
+      const mineralPos = nearestMineral.getComponent<Position>(Position);
+      if (!mineralPos) continue;
+      
+      // 채취 시작
+      const gatherer = scv.getComponent<Gatherer>(Gatherer);
+      const movement = scv.getComponent<Movement>(Movement);
+      const commandCenter = this.findNearestCommandCenter(pos.x, pos.y);
+      
+      if (gatherer && movement && commandCenter) {
+        gatherer.startGathering(nearestMineral.id, commandCenter.id);
+        movement.setTarget(mineralPos.x, mineralPos.y);
+      }
+    }
+  }
+  
+  private getIdleSCVs(): Entity[] {
+    return this.getMyUnits().filter(u => {
+      const unit = u.getComponent<Unit>(Unit);
+      const gatherer = u.getComponent<Gatherer>(Gatherer);
+      const movement = u.getComponent<Movement>(Movement);
+      
+      if (unit?.unitType !== UnitType.SCV) return false;
+      if (gatherer?.state !== GathererState.IDLE) return false;
+      if (movement?.isMoving) return false;
+      
+      return true;
+    });
+  }
+  
+  private findNearestMineral(x: number, y: number): Entity | null {
+    let nearest: Entity | null = null;
+    let nearestDist = Infinity;
+    
+    for (const entity of this.gameState.getAllEntities()) {
+      const resource = entity.getComponent<Resource>(Resource);
+      const position = entity.getComponent<Position>(Position);
+      
+      if (!resource || !position || resource.isDepleted()) continue;
+      if (resource.resourceType !== 'minerals') continue;
+      
+      const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = entity;
+      }
+    }
+    
+    return nearest;
+  }
+  
+  private findNearestCommandCenter(x: number, y: number): Entity | null {
+    let nearest: Entity | null = null;
+    let nearestDist = Infinity;
+    
+    for (const building of this.getMyBuildings()) {
+      const buildingComp = building.getComponent<Building>(Building);
+      const position = building.getComponent<Position>(Position);
+      
+      if (!buildingComp || !position) continue;
+      if (buildingComp.buildingType !== BuildingType.COMMAND_CENTER) continue;
+      if (buildingComp.isConstructing) continue;
+      
+      const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = building;
+      }
+    }
+    
+    return nearest;
+  }
+
+  // ==========================================
+  // 공격 로직
+  // ==========================================
+  
+  private launchAttack(): void {
+    const combatUnits = this.getCombatUnits();
+    const enemyEntities = this.getEnemyEntities();
+
+    if (enemyEntities.length === 0) return;
+    if (combatUnits.length < Math.floor(this.minAttackUnits * 0.6)) {
+      this.state = AIState.BUILDING_UP;
+      return;
+    }
+
+    // 가장 가까운 적 건물 또는 유닛 찾기
+    const target = this.findPriorityTarget(enemyEntities);
+    if (!target) return;
+    
+    const targetPos = target.getComponent<Position>(Position);
+    if (!targetPos) return;
+
+    console.log(`AI launching attack with ${combatUnits.length} units!`);
+
+    // 모든 전투 유닛에게 공격 명령
+    for (const unit of combatUnits) {
+      const movement = unit.getComponent<Movement>(Movement);
+      const combat = unit.getComponent<Combat>(Combat);
+
+      if (movement && combat) {
+        combat.startAttackMove(targetPos.x, targetPos.y);
+        movement.setTarget(targetPos.x, targetPos.y);
+      }
+    }
+  }
+  
+  private findPriorityTarget(enemies: Entity[]): Entity | null {
+    // 우선순위: 건물 > 유닛
+    const buildings = enemies.filter(e => e.getComponent<Building>(Building));
+    const units = enemies.filter(e => e.getComponent<Unit>(Unit));
+    
+    // 건물 중 가장 가까운 것
+    if (buildings.length > 0) {
+      return buildings[0];
+    }
+    
+    return units[0] || null;
+  }
+  
+  private getCombatUnits(): Entity[] {
+    return this.getMyUnits().filter(u => {
+      const unit = u.getComponent<Unit>(Unit);
+      return unit && unit.unitType !== UnitType.SCV && UNIT_STATS[unit.unitType].category !== UnitCategory.WORKER;
+    });
+  }
+
+  // ==========================================
+  // 헬퍼 메서드
+  // ==========================================
+  
+  private getMyUnits(): Entity[] {
+    return this.gameState.getAllEntities().filter(e => {
+      const owner = e.getComponent<Owner>(Owner);
+      const unit = e.getComponent<Unit>(Unit);
+      return owner?.playerId === this.playerId && unit && !e.isDestroyed();
+    });
+  }
+
+  private getMyBuildings(): Entity[] {
+    return this.gameState.getAllEntities().filter(e => {
+      const owner = e.getComponent<Owner>(Owner);
+      const building = e.getComponent<Building>(Building);
+      return owner?.playerId === this.playerId && building && !e.isDestroyed();
+    });
+  }
+
+  private getEnemyEntities(): Entity[] {
+    return this.gameState.getAllEntities().filter(e => {
+      const owner = e.getComponent<Owner>(Owner);
+      return owner && owner.playerId === this.targetPlayerId && !e.isDestroyed();
+    });
+  }
+
+  getState(): AIState {
+    return this.state;
+  }
+}
