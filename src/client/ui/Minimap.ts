@@ -78,12 +78,16 @@ export class Minimap {
     this.hitArea.setDepth(3002);
 
     // 클릭 및 드래그로 카메라 이동
-    this.hitArea.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    this.hitArea.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      // 이벤트 전파 중단 (SelectionManager에서 선택 박스 생성 방지)
+      event.stopPropagation();
+      pointer.event.stopPropagation();
       this.handleMinimapClick(pointer.x, pointer.y);
     });
     
-    this.hitArea.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+    this.hitArea.on('pointermove', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
       if (pointer.isDown) {
+        event.stopPropagation();
         this.handleMinimapClick(pointer.x, pointer.y);
       }
     });
