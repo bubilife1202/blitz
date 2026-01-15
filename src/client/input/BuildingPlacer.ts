@@ -5,13 +5,14 @@
 import Phaser from 'phaser';
 import type { GameState } from '@core/GameState';
 import type { PathfindingService } from '@core/PathfindingService';
+import type { SelectionManager } from './SelectionManager';
 
 import { Position } from '@core/components/Position';
-import { Selectable } from '@core/components/Selectable';
 import { Owner } from '@core/components/Owner';
 import { Building } from '@core/components/Building';
-import { ProductionQueue } from '@core/components/ProductionQueue';
-import { ResearchQueue } from '@core/components/ResearchQueue';
+import { Movement } from '@core/components/Movement';
+import { Builder } from '@core/components/Builder';
+import { Gatherer } from '@core/components/Gatherer';
 import { Resource } from '@core/components/Resource';
 import { BuildingType, ResourceType, type PlayerId } from '@shared/types';
 import { BUILDING_STATS } from '@shared/constants';
@@ -19,7 +20,7 @@ import { BUILDING_STATS } from '@shared/constants';
 export class BuildingPlacer {
   private scene: Phaser.Scene;
   private gameState: GameState;
-  private pathfinding: PathfindingService;
+  private selectionManager: SelectionManager;
   private localPlayerId: PlayerId;
 
   // 배치 상태
@@ -37,12 +38,15 @@ export class BuildingPlacer {
     scene: Phaser.Scene,
     gameState: GameState,
     pathfinding: PathfindingService,
+    selectionManager: SelectionManager,
     localPlayerId: PlayerId = 1
   ) {
     this.scene = scene;
     this.gameState = gameState;
-    this.pathfinding = pathfinding;
+    this.selectionManager = selectionManager;
     this.localPlayerId = localPlayerId;
+    // pathfinding is passed for constructor compatibility but not used directly here
+    void pathfinding;
     this.gridSize = gameState.config.tileSize;
 
     this.createGhostGraphics();
@@ -218,9 +222,64 @@ export class BuildingPlacer {
     return null;
   }
 
-  // 건물 배치
+  // 건물 배치 - SCV에게 건설 명령 전달
   private placeBuilding(x: number, y: number, buildingType: BuildingType): void {
     const stats = BUILDING_STATS[buildingType];
+
+    // Refinery인 경우 가스 간헐천 위치로 조정
+    if (buildingType === BuildingType.REFINERY) {
+      const geyser = this.findGasGeyserAt(x, y);
+      if (geyser) {
+        x = geyser.position.x;
+        y = geyser.position.y;
+      }
+    }
+
+    // 가장 가까운 SCV 찾기
+    const selectedEntities = this.selectionManager.getSelectedEntities();
+    let nearestSCV: import('@core/ecs/Entity').Entity | null = null;
+    let nearestDist = Infinity;
+
+    for (const entity of selectedEntities) {
+      const gatherer = entity.getComponent<Gatherer>(Gatherer);
+      const builder = entity.getComponent<Builder>(Builder);
+      const position = entity.getComponent<Position>(Position);
+      const owner = entity.getComponent<Owner>(Owner);
+
+      if (!gatherer || !builder || !position || !owner) continue;
+      if (owner.playerId !== this.localPlayerId) continue;
+
+      const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestSCV = entity;
+      }
+    }
+
+    // 선택된 SCV가 없으면 모든 SCV 중에서 찾기
+    if (!nearestSCV) {
+      for (const entity of this.gameState.getAllEntities()) {
+        const gatherer = entity.getComponent<Gatherer>(Gatherer);
+        const builder = entity.getComponent<Builder>(Builder);
+        const position = entity.getComponent<Position>(Position);
+        const owner = entity.getComponent<Owner>(Owner);
+
+        if (!gatherer || !builder || !position || !owner) continue;
+        if (owner.playerId !== this.localPlayerId) continue;
+
+        const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestSCV = entity;
+        }
+      }
+    }
+
+    if (!nearestSCV) {
+      console.log('No SCV available to build!');
+      this.cancelPlacement();
+      return;
+    }
 
     // 자원 차감
     this.gameState.modifyPlayerResources(this.localPlayerId, {
@@ -228,47 +287,26 @@ export class BuildingPlacer {
       gas: -stats.gasCost,
     });
 
-    // 건물 엔티티 생성
-    const entity = this.gameState.createEntity();
-    const building = new Building(buildingType, false);
-    
-    // Refinery인 경우 가스 간헐천과 연결
-    if (buildingType === BuildingType.REFINERY) {
-      const geyser = this.findGasGeyserAt(x, y);
-      if (geyser) {
-        building.linkedGeyserId = geyser.entity.id;
-        // Refinery 위치를 간헐천 위치로 조정
-        x = geyser.position.x;
-        y = geyser.position.y;
-      }
-    }
-    
-    entity
-      .addComponent(new Position(x, y))
-      .addComponent(new Selectable(32))
-      .addComponent(new Owner(this.localPlayerId))
-      .addComponent(building);
+    // SCV에게 건설 명령 전달
+    const builder = nearestSCV.getComponent<Builder>(Builder)!;
+    const movement = nearestSCV.getComponent<Movement>(Movement);
+    const gatherer = nearestSCV.getComponent<Gatherer>(Gatherer);
 
-    // 생산 가능 건물에 ProductionQueue 추가
-    if (stats.canProduce && stats.canProduce.length > 0) {
-      entity.addComponent(new ProductionQueue(5));
+    // 채취 중단
+    if (gatherer) {
+      gatherer.stop();
     }
 
-    // 연구 가능 건물에 ResearchQueue 추가
-    if (stats.canResearch && stats.canResearch.length > 0) {
-      entity.addComponent(new ResearchQueue());
+    // 건설 위치로 이동 명령
+    builder.startBuildCommand(buildingType, x, y);
+    if (movement) {
+      // 건물 중심 위치로 이동
+      const centerX = x + (stats.size.width * this.gridSize) / 2;
+      const centerY = y + (stats.size.height * this.gridSize) / 2;
+      movement.setTarget(centerX, centerY);
     }
 
-    // 패스파인딩 장애물 등록
-    const tileX = Math.floor(x / this.gridSize);
-    const tileY = Math.floor(y / this.gridSize);
-    for (let dy = 0; dy < stats.size.height; dy++) {
-      for (let dx = 0; dx < stats.size.width; dx++) {
-        this.pathfinding.setObstacle(tileX + dx, tileY + dy);
-      }
-    }
-
-    console.log(`Placed ${buildingType} at (${x}, ${y})`);
+    console.log(`SCV ordered to build ${buildingType} at (${x}, ${y})`);
 
     // 콜백 호출
     this.onBuildingPlaced?.(buildingType, x, y);

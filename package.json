@@ -1,6 +1,6 @@
 {
   "name": "blitz",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Browser-based RTS game with TypeScript and Phaser 3",
   "type": "module",
   "scripts": {

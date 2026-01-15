@@ -16,6 +16,7 @@ import { Gatherer } from './components/Gatherer';
 import { Resource } from './components/Resource';
 import { ProductionQueue } from './components/ProductionQueue';
 import { ResearchQueue } from './components/ResearchQueue';
+import { Builder } from './components/Builder';
 
 // 타입 검증 헬퍼 함수
 function isValidUnitType(value: string): value is UnitType {
@@ -100,6 +101,11 @@ const componentFactories: Record<ComponentType, ComponentDeserializer> = {
     const queue = new ResearchQueue();
     queue.deserialize(data);
     return queue;
+  },
+  builder: (data) => {
+    const builder = new Builder();
+    builder.deserialize(data);
+    return builder;
   },
 };
 

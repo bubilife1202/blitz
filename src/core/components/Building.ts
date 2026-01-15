@@ -15,6 +15,7 @@ export interface BuildingData {
   rallyPointX: number | null;
   rallyPointY: number | null;
   linkedGeyserId: number | null;
+  builderId: number | null; // 건설 중인 SCV ID
   // Bunker 관련
   garrisonedUnits: number[];
   maxGarrison: number;
@@ -33,6 +34,7 @@ export class Building extends Component {
   public width: number;
   public height: number;
   public linkedGeyserId: number | null = null; // Refinery용 - 연결된 가스 간헐천 ID
+  public builderId: number | null = null; // 건설 중인 SCV ID
   
   // Bunker 관련
   public garrisonedUnits: number[] = []; // 탑승한 유닛 ID 목록
@@ -127,6 +129,7 @@ export class Building extends Component {
       rallyPointX: this.rallyPointX,
       rallyPointY: this.rallyPointY,
       linkedGeyserId: this.linkedGeyserId,
+      builderId: this.builderId,
       garrisonedUnits: [...this.garrisonedUnits],
       maxGarrison: this.maxGarrison,
     };
@@ -142,6 +145,7 @@ export class Building extends Component {
     this.rallyPointX = d.rallyPointX;
     this.rallyPointY = d.rallyPointY;
     this.linkedGeyserId = d.linkedGeyserId;
+    this.builderId = d.builderId || null;
     this.garrisonedUnits = d.garrisonedUnits || [];
     this.maxGarrison = d.maxGarrison || 0;
   }
@@ -153,6 +157,7 @@ export class Building extends Component {
     b.rallyPointX = this.rallyPointX;
     b.rallyPointY = this.rallyPointY;
     b.linkedGeyserId = this.linkedGeyserId;
+    b.builderId = this.builderId;
     b.garrisonedUnits = [...this.garrisonedUnits];
     b.maxGarrison = this.maxGarrison;
     return b;

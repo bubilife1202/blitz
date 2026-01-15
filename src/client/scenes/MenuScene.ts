@@ -55,7 +55,7 @@ export class MenuScene extends Phaser.Scene {
     ));
 
     // 버전 정보
-    this.add.text(10, height - 30, 'v1.0.0', {
+    this.add.text(10, height - 30, 'v1.1.0', {
       fontSize: '14px',
       color: '#666666',
     });

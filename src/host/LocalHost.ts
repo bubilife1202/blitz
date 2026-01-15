@@ -13,6 +13,7 @@ import { Unit } from '@core/components/Unit';
 import { Movement } from '@core/components/Movement';
 import { Combat } from '@core/components/Combat';
 import { Gatherer } from '@core/components/Gatherer';
+import { Builder } from '@core/components/Builder';
 import { Building } from '@core/components/Building';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { ResearchQueue } from '@core/components/ResearchQueue';
@@ -125,6 +126,7 @@ export class LocalHost {
 
     if (unitType === UnitType.SCV) {
       entity.addComponent(new Gatherer(8));
+      entity.addComponent(new Builder());
     }
   }
 

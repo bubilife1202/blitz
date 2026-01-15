@@ -12,6 +12,7 @@ import { GatherSystem } from '@core/systems/GatherSystem';
 import { ProductionSystem } from '@core/systems/ProductionSystem';
 import { CombatSystem } from '@core/systems/CombatSystem';
 import { ConstructionSystem } from '@core/systems/ConstructionSystem';
+import { BuilderSystem } from '@core/systems/BuilderSystem';
 import { HealSystem } from '@core/systems/HealSystem';
 import { VisionSystem } from '@core/systems/VisionSystem';
 import { ResearchSystem } from '@core/systems/ResearchSystem';
@@ -34,7 +35,7 @@ import { Building } from '@core/components/Building';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { Unit } from '@core/components/Unit';
 import { Race, BuildingType, UnitType, UpgradeType, AIDifficulty } from '@shared/types';
-import { UNIT_STATS, UPGRADE_STATS } from '@shared/constants';
+import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS } from '@shared/constants';
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { combatEvents } from '@core/events/CombatEvents';
 import { soundManager } from '../audio/SoundManager';
@@ -111,6 +112,12 @@ export class GameScene extends Phaser.Scene {
     this.gameState.addSystem(this.visionSystem); // 시야 시스템 (먼저)
     this.gameState.addSystem(new MovementSystem());
     this.gameState.addSystem(new GatherSystem());
+    
+    // BuilderSystem (SCV 건설 처리) - ConstructionSystem 전에 실행
+    const builderSystem = new BuilderSystem();
+    builderSystem.setPathfindingService(this.pathfinding);
+    this.gameState.addSystem(builderSystem);
+    
     this.gameState.addSystem(new ConstructionSystem());
     this.gameState.addSystem(new ProductionSystem());
     this.gameState.addSystem(new ResearchSystem()); // 연구 시스템
@@ -151,6 +158,7 @@ export class GameScene extends Phaser.Scene {
       this,
       this.gameState,
       this.pathfinding,
+      this.selectionManager,
       1
     );
     
@@ -538,6 +546,13 @@ export class GameScene extends Phaser.Scene {
 
     if (!building || !queue || building.isConstructing) {
       console.log('Cannot train: no building, no queue, or constructing');
+      return;
+    }
+
+    // 건물이 해당 유닛을 생산할 수 있는지 확인
+    const buildingStats = BUILDING_STATS[building.buildingType];
+    if (!buildingStats.canProduce || !buildingStats.canProduce.includes(unitType)) {
+      console.log(`Building ${building.buildingType} cannot produce ${unitType}`);
       return;
     }
 

@@ -14,6 +14,7 @@ import { Unit } from '../components/Unit';
 import { Movement } from '../components/Movement';
 import { Combat } from '../components/Combat';
 import { Gatherer } from '../components/Gatherer';
+import { Builder } from '../components/Builder';
 import { UnitType, UnitCategory } from '@shared/types';
 import { UNIT_STATS } from '@shared/constants';
 
@@ -88,9 +89,10 @@ export class ProductionSystem extends System {
       unit.addComponent(new Combat());
     }
 
-    // SCV는 채취 가능
+    // SCV는 채취 가능 + 건설 가능
     if (unitType === UnitType.SCV) {
       unit.addComponent(new Gatherer(8));
+      unit.addComponent(new Builder());
     }
 
     // 공급량 증가

@@ -484,7 +484,11 @@ export class HUD {
       if (available) {
         button.on('pointerover', () => button.setFillStyle(0x3377aa));
         button.on('pointerout', () => button.setFillStyle(bgColor));
-        button.on('pointerdown', () => {
+        button.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+          // Stop event propagation to prevent deselection
+          event.stopPropagation();
+          pointer.event.stopPropagation();
+          
           this.onResearchCommand?.(upgradeType);
         });
       }
@@ -556,7 +560,11 @@ export class HUD {
       if (available) {
         button.on('pointerover', () => button.setFillStyle(0x337733));
         button.on('pointerout', () => button.setFillStyle(bgColor));
-        button.on('pointerdown', () => {
+        button.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+          // Stop event propagation to prevent deselection
+          event.stopPropagation();
+          pointer.event.stopPropagation();
+          
           console.log('Button clicked:', mode, opt.type);
           if (mode === 'build') {
             this.onBuildCommand?.(opt.type as BuildingType);
@@ -591,7 +599,11 @@ export class HUD {
 
     button.on('pointerover', () => button.setFillStyle(0x885500));
     button.on('pointerout', () => button.setFillStyle(0x664400));
-    button.on('pointerdown', () => this.onSiegeCommand?.());
+    button.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      pointer.event.stopPropagation();
+      this.onSiegeCommand?.();
+    });
 
     this.commandPanel.add([button, text]);
     this.dynamicButtons.push(button, text);
@@ -617,7 +629,11 @@ export class HUD {
 
     button.on('pointerover', () => button.setFillStyle(0x880066));
     button.on('pointerout', () => button.setFillStyle(0x660044));
-    button.on('pointerdown', () => this.onStimCommand?.());
+    button.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      pointer.event.stopPropagation();
+      this.onStimCommand?.();
+    });
 
     this.commandPanel.add([button, text]);
     this.dynamicButtons.push(button, text);
