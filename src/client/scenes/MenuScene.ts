@@ -21,7 +21,7 @@ export class MenuScene extends Phaser.Scene {
     this.add.rectangle(width / 2, height / 2, width, height, 0x1a1a2e);
 
     // 타이틀
-    const title = this.add.text(width / 2, height / 3, 'STARCRAFT WEB', {
+    const title = this.add.text(width / 2, height / 3, 'BLITZ', {
       fontSize: '64px',
       color: '#ffffff',
       fontStyle: 'bold',
@@ -29,7 +29,7 @@ export class MenuScene extends Phaser.Scene {
     title.setOrigin(0.5);
 
     // 서브타이틀
-    const subtitle = this.add.text(width / 2, height / 3 + 60, 'Browser Edition', {
+    const subtitle = this.add.text(width / 2, height / 3 + 60, 'Browser RTS', {
       fontSize: '24px',
       color: '#888888',
     });
@@ -55,7 +55,7 @@ export class MenuScene extends Phaser.Scene {
     ));
 
     // 버전 정보
-    this.add.text(10, height - 30, 'v0.2.0 - Single Player Complete', {
+    this.add.text(10, height - 30, 'v1.0.0', {
       fontSize: '14px',
       color: '#666666',
     });

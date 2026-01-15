@@ -1,7 +1,7 @@
 {
-  "name": "starcraft_web",
+  "name": "blitz",
   "version": "1.0.0",
-  "description": "Browser-based StarCraft-style RTS game",
+  "description": "Browser-based RTS game with TypeScript and Phaser 3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "keywords": [
-    "starcraft",
     "rts",
+    "strategy",
     "game",
     "phaser"
   ],
