@@ -4,6 +4,7 @@
 
 import Phaser from 'phaser';
 import type { GameState } from '@core/GameState';
+import type { Entity } from '@core/ecs/Entity';
 import type { SelectionManager } from '../input/SelectionManager';
 import type { CommandManager } from '../input/CommandManager';
 import type { BuildingPlacer } from '../input/BuildingPlacer';
@@ -237,6 +238,10 @@ export class PromptInput {
       case 't':
         return this.cmdTrain(args);
 
+      case 'hunt':
+      case 'kill':
+        return this.cmdHunt();
+
       case 'siege':
         return this.cmdSiege();
 
@@ -410,6 +415,52 @@ export class PromptInput {
 
     this.onTrainUnit?.(unitType);
     return { success: true, message: `Training ${unitType}` };
+  }
+
+  private cmdHunt(): CommandResult {
+    const selected = this.selectionManager.getSelectedEntities();
+    const units = selected.filter(e => e.hasComponent(Unit));
+    
+    if (units.length === 0) {
+      return { success: false, message: 'No units selected to hunt' };
+    }
+
+    const allEntities = this.gameState.getAllEntities();
+    let huntCount = 0;
+
+    for (const unit of units) {
+      const pos = unit.getComponent<Position>(Position)!;
+      
+      // 가장 가까운 적 찾기
+      let nearestEnemy: Entity | null = null;
+      let minDist = Infinity;
+
+      for (const entity of allEntities) {
+        const owner = entity.getComponent<Owner>(Owner);
+        const enemyPos = entity.getComponent<Position>(Position);
+        
+        // 플레이어 2(AI) 유닛/건물만 타겟
+        if (owner && owner.playerId !== this.localPlayerId && enemyPos) {
+          const dist = pos.distanceTo(enemyPos);
+          if (dist < minDist) {
+            minDist = dist;
+            nearestEnemy = entity;
+          }
+        }
+      }
+
+      if (nearestEnemy) {
+        const targetPos = nearestEnemy.getComponent<Position>(Position)!;
+        // 해당 적 위치로 어택무브 명령
+        this.commandManager.issueAttackMoveCommand(targetPos.x, targetPos.y);
+        huntCount++;
+      }
+    }
+
+    return { 
+      success: huntCount > 0, 
+      message: huntCount > 0 ? `Hunting nearest enemies with ${huntCount} units` : 'No enemies found to hunt' 
+    };
   }
 
   private cmdSiege(): CommandResult {
