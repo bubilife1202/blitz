@@ -16,7 +16,7 @@ import { Unit } from '@core/components/Unit';
 import { Building } from '@core/components/Building';
 import { Resource } from '@core/components/Resource';
 import { Selectable } from '@core/components/Selectable';
-import { CommandType, BuildingType, type PlayerId, type GameCommand, type Vector2 } from '@shared/types';
+import { CommandType, BuildingType, ResourceType, type PlayerId, type GameCommand, type Vector2 } from '@shared/types';
 import { soundManager } from '../audio/SoundManager';
 
 export class CommandManager {
@@ -105,8 +105,15 @@ export class CommandManager {
       // 자원인지 확인 → 채취 명령
       const resource = targetEntity.getComponent<Resource>(Resource);
       if (resource && !resource.isDepleted()) {
-        this.issueGatherCommand(targetEntity.id, x, y);
-        return;
+        // 가스 간헐천은 직접 채취 불가 (Refinery 필요)
+        if (resource.resourceType === ResourceType.GAS) {
+          console.log('Gas geyser requires a Refinery to harvest!');
+          // 가스 간헐천은 채취 명령 무시 - 이동 명령으로 처리
+        } else {
+          // 미네랄은 직접 채취 가능
+          this.issueGatherCommand(targetEntity.id, x, y);
+          return;
+        }
       }
       
       // Refinery인지 확인 → 가스 채취 명령
@@ -273,16 +280,26 @@ export class CommandManager {
     // X 모양
     this.moveMarker.lineBetween(-8, -8, 8, 8);
     this.moveMarker.lineBetween(-8, 8, 8, -8);
+    
+    // 버스트 파티클 효과 (간단하게 여러 개의 작은 사각형/원)
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i;
+      const dist = 12;
+      this.moveMarker.fillStyle(0xff4444, 0.8);
+      this.moveMarker.fillCircle(Math.cos(angle) * dist, Math.sin(angle) * dist, 2);
+    }
 
     this.moveMarker.setPosition(x, y);
     this.moveMarker.setVisible(true);
     this.moveMarker.setAlpha(1);
+    this.moveMarker.setScale(0.5);
 
     this.moveMarkerTween = this.scene.tweens.add({
       targets: this.moveMarker,
       alpha: 0,
-      scale: 1.5,
-      duration: 500,
+      scale: 1.8,
+      duration: 400,
+      ease: 'Back.easeOut',
       onComplete: () => {
         this.moveMarker?.setVisible(false);
         this.moveMarker?.setScale(1);
@@ -304,16 +321,26 @@ export class CommandManager {
     this.moveMarker.lineBetween(10, 0, 0, 10);
     this.moveMarker.lineBetween(0, 10, -10, 0);
     this.moveMarker.lineBetween(-10, 0, 0, -10);
+    
+    // 버스트
+    for (let i = 0; i < 4; i++) {
+      const angle = (Math.PI / 2) * i + Math.PI / 4;
+      const dist = 14;
+      this.moveMarker.fillStyle(0x00ffff, 0.8);
+      this.moveMarker.fillRect(Math.cos(angle) * dist - 2, Math.sin(angle) * dist - 2, 4, 4);
+    }
 
     this.moveMarker.setPosition(x, y);
     this.moveMarker.setVisible(true);
     this.moveMarker.setAlpha(1);
+    this.moveMarker.setScale(0.5);
 
     this.moveMarkerTween = this.scene.tweens.add({
       targets: this.moveMarker,
       alpha: 0,
-      scale: 1.5,
-      duration: 500,
+      scale: 1.8,
+      duration: 400,
+      ease: 'Back.easeOut',
       onComplete: () => {
         this.moveMarker?.setVisible(false);
         this.moveMarker?.setScale(1);
@@ -372,10 +399,14 @@ export class CommandManager {
     });
   }
 
-  // 정지 명령
+  // 정지 명령 (유닛에만 적용, 건물 선택 시 무시)
   issueStopCommand(): void {
     if (this.isPaused) return;
     const selectedEntities = this.selectionManager.getSelectedEntities();
+    
+    // 건물만 선택된 경우 무시 (유닛 생산 키와 충돌 방지)
+    const hasUnits = selectedEntities.some(e => e.getComponent<Unit>(Unit));
+    if (!hasUnits) return;
 
     for (const entity of selectedEntities) {
       const movement = entity.getComponent<Movement>(Movement);
@@ -390,10 +421,14 @@ export class CommandManager {
     });
   }
 
-  // 홀드 명령
+  // 홀드 명령 (유닛에만 적용, 건물 선택 시 무시)
   issueHoldCommand(): void {
     if (this.isPaused) return;
     const selectedEntities = this.selectionManager.getSelectedEntities();
+    
+    // 건물만 선택된 경우 무시 (유닛 생산 키와 충돌 방지)
+    const hasUnits = selectedEntities.some(e => e.getComponent<Unit>(Unit));
+    if (!hasUnits) return;
 
     for (const entity of selectedEntities) {
       const movement = entity.getComponent<Movement>(Movement);
@@ -437,6 +472,8 @@ export class CommandManager {
     // 좌클릭: A-Move 실행
     const clickHandler = (pointer: Phaser.Input.Pointer) => {
       if (pointer.leftButtonDown() && this.isAttackMoveMode) {
+        // 명령 모드 설정 (선택 해제 방지)
+        this.selectionManager.setCommandMode(true);
         this.issueAttackMoveCommand(pointer.worldX, pointer.worldY);
         this.exitAttackMoveMode();
         this.scene.input.off('pointermove', moveHandler);
@@ -511,16 +548,26 @@ export class CommandManager {
     this.moveMarker.lineBetween(0, -10, 0, 10);
     this.moveMarker.lineBetween(-6, 4, 0, 10);
     this.moveMarker.lineBetween(6, 4, 0, 10);
+    
+    // 버스트
+    for (let i = 0; i < 5; i++) {
+      const angle = (Math.PI * 2 / 5) * i;
+      const dist = 12;
+      this.moveMarker.fillStyle(0xff8800, 0.8);
+      this.moveMarker.fillCircle(Math.cos(angle) * dist, Math.sin(angle) * dist, 3);
+    }
 
     this.moveMarker.setPosition(x, y);
     this.moveMarker.setVisible(true);
     this.moveMarker.setAlpha(1);
+    this.moveMarker.setScale(0.5);
 
     this.moveMarkerTween = this.scene.tweens.add({
       targets: this.moveMarker,
       alpha: 0,
-      scale: 1.5,
-      duration: 500,
+      scale: 1.8,
+      duration: 400,
+      ease: 'Back.easeOut',
       onComplete: () => {
         this.moveMarker?.setVisible(false);
         this.moveMarker?.setScale(1);
@@ -571,17 +618,27 @@ export class CommandManager {
     this.moveMarker.strokeCircle(0, 0, 15);
     this.moveMarker.lineBetween(-10, 0, 10, 0);
     this.moveMarker.lineBetween(0, -10, 0, 10);
+    
+    // 버스트 파티클
+    for (let i = 0; i < 4; i++) {
+      const angle = (Math.PI / 2) * i;
+      const dist = 12;
+      this.moveMarker.fillStyle(0x00ff00, 0.8);
+      this.moveMarker.fillRect(Math.cos(angle) * dist - 2, Math.sin(angle) * dist - 2, 4, 4);
+    }
 
     this.moveMarker.setPosition(x, y);
     this.moveMarker.setVisible(true);
     this.moveMarker.setAlpha(1);
+    this.moveMarker.setScale(0.5);
 
-    // 페이드 아웃 애니메이션
+    // 페이드 아웃 애니메이션 (Back easeOut으로 생동감 추가)
     this.moveMarkerTween = this.scene.tweens.add({
       targets: this.moveMarker,
       alpha: 0,
-      scale: 1.5,
-      duration: 500,
+      scale: 1.8,
+      duration: 400,
+      ease: 'Back.easeOut',
       onComplete: () => {
         this.moveMarker?.setVisible(false);
         this.moveMarker?.setScale(1);

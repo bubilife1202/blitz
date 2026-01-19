@@ -29,13 +29,14 @@ import { BuildingPlacer } from '../input/BuildingPlacer';
 import { Minimap } from '../ui/Minimap';
 import { HUD } from '../ui/HUD';
 import { PauseMenu } from '../ui/PauseMenu';
+import { PromptInput } from '../ui/PromptInput';
 import { Position } from '@core/components/Position';
 import { Owner } from '@core/components/Owner';
 import { Building } from '@core/components/Building';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { Unit } from '@core/components/Unit';
 import { Race, BuildingType, UnitType, UpgradeType, AIDifficulty } from '@shared/types';
-import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS } from '@shared/constants';
+import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS, canTrainUnit } from '@shared/constants';
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { combatEvents } from '@core/events/CombatEvents';
 import { soundManager } from '../audio/SoundManager';
@@ -71,6 +72,7 @@ export class GameScene extends Phaser.Scene {
   private minimap!: Minimap;
   private hud!: HUD;
   private pauseMenu!: PauseMenu;
+  private promptInput!: PromptInput;
   private gameOverText!: Phaser.GameObjects.Text;
   private isPaused: boolean = false;
   private aiDifficulty: AIDifficulty = AIDifficulty.NORMAL;
@@ -202,6 +204,21 @@ export class GameScene extends Phaser.Scene {
     // 카메라 설정
     this.setupCamera();
     
+    // 초기 시야 및 렌더링 실행 (Restart 후 화면 표시 문제 해결)
+    // VisionSystem을 먼저 업데이트해야 시야가 계산됨
+    const entities = this.gameState.getAllEntities();
+    const entitiesWithOwner = entities.filter(e => 
+      e.getComponent<Position>(Position) && e.getComponent<Owner>(Owner)
+    );
+    this.visionSystem.update(entitiesWithOwner, this.gameState, 0);
+    
+    // 렌더러 초기화
+    this.unitRenderer.updateEntities(entities);
+    this.buildingRenderer.updateEntities(entities);
+    this.resourceRenderer.updateEntities(entities);
+    this.fogRenderer.update();
+    this.minimap.update();
+    
     // 게임 오버 텍스트 (숨김)
     this.gameOverText = this.add.text(
       this.scale.width / 2,
@@ -222,6 +239,21 @@ export class GameScene extends Phaser.Scene {
     this.pauseMenu.onSettings = () => {
       // 설정 메뉴 (추후 구현)
       console.log('Settings - not implemented yet');
+    };
+
+    // 프롬프트 입력창 설정
+    this.promptInput = new PromptInput(
+      this,
+      this.gameState,
+      this.selectionManager,
+      this.commandManager,
+      this.buildingPlacer
+    );
+    this.promptInput.onTrainUnit = (unitType: UnitType) => {
+      this.trainUnit(unitType);
+    };
+    this.promptInput.onTogglePause = () => {
+      this.togglePause();
     };
     
     // 전투 이벤트 구독 (이펙트 연동)
@@ -423,27 +455,41 @@ export class GameScene extends Phaser.Scene {
       this.activateStimPack();
     });
     
-    // 유닛 생산 단축키
+    // 유닛 생산 단축키 (건물이 선택되었을 때만 작동)
     this.input.keyboard?.on('keydown-S', () => {
-      this.trainUnit(UnitType.SCV);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.SCV);
+      }
     });
     this.input.keyboard?.on('keydown-M', () => {
-      this.trainUnit(UnitType.MARINE);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.MARINE);
+      }
     });
     this.input.keyboard?.on('keydown-I', () => {
-      this.trainUnit(UnitType.FIREBAT);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.FIREBAT);
+      }
     });
     this.input.keyboard?.on('keydown-H', () => {
-      this.trainUnit(UnitType.MEDIC);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.MEDIC);
+      }
     });
     this.input.keyboard?.on('keydown-V', () => {
-      this.trainUnit(UnitType.VULTURE);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.VULTURE);
+      }
     });
     this.input.keyboard?.on('keydown-G', () => {
-      this.trainUnit(UnitType.GOLIATH);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.GOLIATH);
+      }
     });
     this.input.keyboard?.on('keydown-K', () => {
-      this.trainUnit(UnitType.SIEGE_TANK);
+      if (this.hasProductionBuildingSelected()) {
+        this.trainUnit(UnitType.SIEGE_TANK);
+      }
     });
   }
 
@@ -534,6 +580,31 @@ export class GameScene extends Phaser.Scene {
     this.gameOverText.setVisible(true);
   }
 
+  // 플레이어가 보유한 건물 타입 목록 가져오기
+  private getPlayerBuildingTypes(): BuildingType[] {
+    const types: BuildingType[] = [];
+    for (const entity of this.gameState.getAllEntities()) {
+      const owner = entity.getComponent<Owner>(Owner);
+      const building = entity.getComponent<Building>(Building);
+      if (owner?.playerId === 1 && building && !building.isConstructing) {
+        if (!types.includes(building.buildingType)) {
+          types.push(building.buildingType);
+        }
+      }
+    }
+    return types;
+  }
+
+  // 선택된 것이 생산 가능한 건물인지 확인
+  private hasProductionBuildingSelected(): boolean {
+    const selected = this.selectionManager.getSelectedEntities();
+    if (selected.length === 0) return false;
+    const entity = selected[0];
+    const building = entity.getComponent<Building>(Building);
+    const queue = entity.getComponent<ProductionQueue>(ProductionQueue);
+    return !!building && !!queue && !building.isConstructing;
+  }
+
   // 유닛 생산
   private trainUnit(unitType: UnitType): void {
     console.log('=== trainUnit called ===', unitType);
@@ -558,6 +629,13 @@ export class GameScene extends Phaser.Scene {
     const buildingStats = BUILDING_STATS[building.buildingType];
     if (!buildingStats.canProduce || !buildingStats.canProduce.includes(unitType)) {
       console.log(`Building ${building.buildingType} cannot produce ${unitType}`);
+      return;
+    }
+
+    // 테크 트리 요구사항 확인 (예: Siege Tank → Armory 필요)
+    const playerBuildings = this.getPlayerBuildingTypes();
+    if (!canTrainUnit(unitType, playerBuildings)) {
+      console.log(`Missing required building for ${unitType}`);
       return;
     }
 
@@ -688,6 +766,7 @@ export class GameScene extends Phaser.Scene {
     this.minimap.destroy();
     this.hud.destroy();
     this.pauseMenu.destroy();
+    this.promptInput.destroy();
     this.buildingPlacer.destroy();
   }
 

@@ -52,8 +52,15 @@ export class GameLoop {
     if (!this.running) return;
 
     const currentTime = performance.now();
-    const deltaTime = currentTime - this.lastTime;
+    let deltaTime = currentTime - this.lastTime;
     this.lastTime = currentTime;
+
+    // 탭 전환 등으로 인한 긴 지연 시 최대 틱 수 제한 (버벅임 방지)
+    // 최대 5틱(약 300ms)만 처리하고 나머지는 버림
+    const maxDelta = this.tickInterval * 5;
+    if (deltaTime > maxDelta) {
+      deltaTime = maxDelta;
+    }
 
     this.accumulator += deltaTime;
 

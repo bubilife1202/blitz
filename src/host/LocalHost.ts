@@ -35,6 +35,23 @@ export class LocalHost {
     const tileSize = this.gameState.config.tileSize;
     const mapSize = this.gameState.config.mapWidth * tileSize;
 
+    // 플레이어 자원 초기화 (먼저 설정하여 UI에 즉시 반영)
+    this.gameState.modifyPlayerResources(1, { 
+      minerals: 200,  // 추가 미네랄
+      supply: 8,      // 4 SCV + 4 Marine
+      supplyMax: 18   // CC(10) + Depot(8)
+    });
+    this.gameState.modifyPlayerResources(2, { 
+      minerals: 200,
+      supply: 6,      // 2 SCV + 4 Marine
+      supplyMax: 10   // CC(10)
+    });
+
+    // 배치 모드 시작 (건물 생성 시 setGrid 호출 최소화)
+    if (this.pathfinding) {
+      this.pathfinding.beginBatch();
+    }
+
     // ====== 플레이어 1 (좌측 상단) ======
     // 커맨드 센터
     this.createBuilding(BuildingType.COMMAND_CENTER, 1, 6 * tileSize, 8 * tileSize, true);
@@ -43,13 +60,27 @@ export class LocalHost {
     // 서플라이 디팟
     this.createBuilding(BuildingType.SUPPLY_DEPOT, 1, 3 * tileSize, 8 * tileSize, true);
 
-    // SCV
+    // ====== 플레이어 2 (AI - 우측 하단) ======
+    const p2BaseX = mapSize - 8 * tileSize;
+    const p2BaseY = mapSize - 10 * tileSize;
+
+    // 커맨드 센터
+    this.createBuilding(BuildingType.COMMAND_CENTER, 2, p2BaseX, p2BaseY, true);
+    // 배럭
+    this.createBuilding(BuildingType.BARRACKS, 2, p2BaseX - 6 * tileSize, p2BaseY, true);
+
+    // 배치 모드 종료 (그리드 한 번에 적용)
+    if (this.pathfinding) {
+      this.pathfinding.endBatch();
+    }
+
+    // SCV (플레이어 1)
     this.createUnit(UnitType.SCV, 1, 5 * tileSize, 5 * tileSize);
     this.createUnit(UnitType.SCV, 1, 6 * tileSize, 5 * tileSize);
     this.createUnit(UnitType.SCV, 1, 7 * tileSize, 5 * tileSize);
     this.createUnit(UnitType.SCV, 1, 8 * tileSize, 5 * tileSize);
 
-    // 마린
+    // 마린 (플레이어 1)
     this.createUnit(UnitType.MARINE, 1, 10 * tileSize, 5 * tileSize);
     this.createUnit(UnitType.MARINE, 1, 11 * tileSize, 5 * tileSize);
     this.createUnit(UnitType.MARINE, 1, 12 * tileSize, 5 * tileSize);
@@ -69,20 +100,11 @@ export class LocalHost {
     this.createGasGeyser(11 * tileSize, 3 * tileSize);
     this.createGasGeyser(12 * tileSize, 3 * tileSize);
 
-    // ====== 플레이어 2 (AI - 우측 하단) ======
-    const p2BaseX = mapSize - 8 * tileSize;
-    const p2BaseY = mapSize - 10 * tileSize;
-
-    // 커맨드 센터
-    this.createBuilding(BuildingType.COMMAND_CENTER, 2, p2BaseX, p2BaseY, true);
-    // 배럭
-    this.createBuilding(BuildingType.BARRACKS, 2, p2BaseX - 6 * tileSize, p2BaseY, true);
-
-    // SCV
+    // SCV (플레이어 2)
     this.createUnit(UnitType.SCV, 2, p2BaseX + tileSize, p2BaseY - 3 * tileSize);
     this.createUnit(UnitType.SCV, 2, p2BaseX + 2 * tileSize, p2BaseY - 3 * tileSize);
 
-    // 마린
+    // 마린 (플레이어 2)
     this.createUnit(UnitType.MARINE, 2, p2BaseX - 2 * tileSize, p2BaseY - 3 * tileSize);
     this.createUnit(UnitType.MARINE, 2, p2BaseX - 3 * tileSize, p2BaseY - 3 * tileSize);
     this.createUnit(UnitType.MARINE, 2, p2BaseX - 4 * tileSize, p2BaseY - 3 * tileSize);
@@ -96,18 +118,6 @@ export class LocalHost {
     // 가스 (플레이어 2 근처)
     this.createGasGeyser(mapSize - 11 * tileSize, mapSize - 3 * tileSize);
     this.createGasGeyser(mapSize - 12 * tileSize, mapSize - 3 * tileSize);
-
-    // 플레이어 자원 초기화
-    this.gameState.modifyPlayerResources(1, { 
-      minerals: 200,  // 추가 미네랄
-      supply: 8,      // 4 SCV + 4 Marine
-      supplyMax: 18   // CC(10) + Depot(8)
-    });
-    this.gameState.modifyPlayerResources(2, { 
-      minerals: 200,
-      supply: 6,      // 2 SCV + 4 Marine
-      supplyMax: 10   // CC(10)
-    });
 
     console.log(`Created ${this.gameState.getAllEntities().length} entities`);
   }

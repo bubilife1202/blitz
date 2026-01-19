@@ -18,9 +18,12 @@ export class SelectionManager {
   private gameState: GameState;
   private localPlayerId: PlayerId;
 
-  private selectionBox: Phaser.GameObjects.Rectangle | null = null;
+  private selectionBox: Phaser.GameObjects.Graphics | null = null;
   private selectionStart: { x: number; y: number } | null = null;
   private selectedEntities: Set<EntityId> = new Set();
+  
+  // 명령 모드 플래그 (A-move 등 명령 실행 중 선택 해제 방지)
+  private isCommandMode: boolean = false;
 
   // 콜백
   public onSelectionChange?: (selectedIds: EntityId[]) => void;
@@ -59,11 +62,9 @@ export class SelectionManager {
   private startSelection(x: number, y: number): void {
     this.selectionStart = { x, y };
 
-    // 선택 박스 생성
-    this.selectionBox = this.scene.add.rectangle(x, y, 0, 0, 0x00ff00, 0.2);
-    this.selectionBox.setStrokeStyle(1, 0x00ff00);
+    // 선택 박스 생성 (Graphics 사용)
+    this.selectionBox = this.scene.add.graphics();
     this.selectionBox.setDepth(1100); // Above fog (1000)
-    this.selectionBox.setOrigin(0, 0);
   }
 
   private updateSelectionBox(x: number, y: number): void {
@@ -71,13 +72,45 @@ export class SelectionManager {
 
     const width = x - this.selectionStart.x;
     const height = y - this.selectionStart.y;
+    
+    const absWidth = Math.abs(width);
+    const absHeight = Math.abs(height);
+    const posX = width >= 0 ? this.selectionStart.x : x;
+    const posY = height >= 0 ? this.selectionStart.y : y;
 
-    // setSize는 양수만 받으므로 위치 조정 필요
-    this.selectionBox.setPosition(
-      width >= 0 ? this.selectionStart.x : x,
-      height >= 0 ? this.selectionStart.y : y
-    );
-    this.selectionBox.setSize(Math.abs(width), Math.abs(height));
+    this.selectionBox.clear();
+    
+    // 반투명 배경
+    this.selectionBox.fillStyle(0x00ff00, 0.1);
+    this.selectionBox.fillRect(0, 0, absWidth, absHeight);
+    
+    // 점선 테두리 또는 일반 테두리
+    this.selectionBox.lineStyle(1, 0x00ff00, 0.5);
+    this.selectionBox.strokeRect(0, 0, absWidth, absHeight);
+    
+    // 코너 브라켓 (더 "하이테크"한 느낌)
+    const bracketSize = Math.min(10, absWidth / 3, absHeight / 3);
+    if (bracketSize > 2) {
+      this.selectionBox.lineStyle(2, 0x00ff00, 1);
+      
+      // 좌상
+      this.selectionBox.lineBetween(0, 0, bracketSize, 0);
+      this.selectionBox.lineBetween(0, 0, 0, bracketSize);
+      
+      // 우상
+      this.selectionBox.lineBetween(absWidth, 0, absWidth - bracketSize, 0);
+      this.selectionBox.lineBetween(absWidth, 0, absWidth, bracketSize);
+      
+      // 좌하
+      this.selectionBox.lineBetween(0, absHeight, bracketSize, absHeight);
+      this.selectionBox.lineBetween(0, absHeight, 0, absHeight - bracketSize);
+      
+      // 우하
+      this.selectionBox.lineBetween(absWidth, absHeight, absWidth - bracketSize, absHeight);
+      this.selectionBox.lineBetween(absWidth, absHeight, absWidth, absHeight - bracketSize);
+    }
+
+    this.selectionBox.setPosition(posX, posY);
   }
 
   private endSelection(endX: number, endY: number, addToSelection: boolean): void {
@@ -97,6 +130,12 @@ export class SelectionManager {
     const dragDistance = Math.sqrt(
       Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
+
+    // 명령 모드 중이면 선택 유지 (A-move 등 명령 후 선택 해제 방지)
+    if (this.isCommandMode) {
+      this.isCommandMode = false; // 플래그 리셋
+      return;
+    }
 
     // Shift 키 없으면 기존 선택 해제
     if (!addToSelection) {
@@ -204,6 +243,15 @@ export class SelectionManager {
     }
   }
 
+  // 프로그래밍적으로 선택 추가
+  addToSelection(entity: Entity): void {
+    const selectable = entity.getComponent<Selectable>(Selectable);
+    if (selectable) {
+      selectable.select();
+      this.selectedEntities.add(entity.id);
+    }
+  }
+
   // 선택 해제
   clearSelection(): void {
     for (const entityId of this.selectedEntities) {
@@ -236,5 +284,15 @@ export class SelectionManager {
   // 선택된 유닛이 있는지 확인
   hasSelection(): boolean {
     return this.selectedEntities.size > 0;
+  }
+
+  // 명령 모드 설정 (명령 실행 중 선택 해제 방지)
+  setCommandMode(enabled: boolean): void {
+    this.isCommandMode = enabled;
+  }
+
+  // 명령 모드 확인
+  isInCommandMode(): boolean {
+    return this.isCommandMode;
   }
 }

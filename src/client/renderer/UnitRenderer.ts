@@ -156,38 +156,100 @@ export class UnitRenderer {
     visual.graphics.fillStyle(fillColor, 1);
     visual.graphics.lineStyle(2, colors.dark, 1);
 
+    const time = Date.now() / 1000;
+    
+    // 그림자 효과
+    visual.graphics.fillStyle(0x000000, 0.3);
+    visual.graphics.fillEllipse(2, 4, unitConfig.size * 1.2, unitConfig.size * 0.6);
+    
     switch (unitConfig.shape) {
-      case 'circle':
+      case 'circle': {
+        // Marine - 외부 글로우
+        visual.graphics.fillStyle(colors.light, 0.2);
+        visual.graphics.fillCircle(0, 0, unitConfig.size + 3);
+        // 메인 바디
+        visual.graphics.fillStyle(fillColor, 1);
         visual.graphics.fillCircle(0, 0, unitConfig.size);
+        // 하이라이트
+        visual.graphics.fillStyle(0xffffff, 0.3);
+        visual.graphics.fillCircle(-unitConfig.size * 0.3, -unitConfig.size * 0.3, unitConfig.size * 0.4);
+        // 테두리
+        visual.graphics.lineStyle(2, colors.dark, 1);
         visual.graphics.strokeCircle(0, 0, unitConfig.size);
         break;
-      case 'square':
-        visual.graphics.fillRect(-unitConfig.size, -unitConfig.size, unitConfig.size * 2, unitConfig.size * 2);
-        visual.graphics.strokeRect(-unitConfig.size, -unitConfig.size, unitConfig.size * 2, unitConfig.size * 2);
-        // Secondary color accent for Firebat
+      }
+      case 'square': {
+        const s = unitConfig.size;
+        // 외부 글로우
+        visual.graphics.fillStyle(colors.light, 0.15);
+        visual.graphics.fillRect(-s - 2, -s - 2, s * 2 + 4, s * 2 + 4);
+        // 메인 바디
+        visual.graphics.fillStyle(fillColor, 1);
+        visual.graphics.fillRect(-s, -s, s * 2, s * 2);
+        // 테두리
+        visual.graphics.lineStyle(2, colors.dark, 1);
+        visual.graphics.strokeRect(-s, -s, s * 2, s * 2);
+        // Firebat 화염 악센트
         if (unitConfig.secondaryColor) {
-          visual.graphics.fillStyle(unitConfig.secondaryColor, 0.6);
-          visual.graphics.fillRect(-unitConfig.size + 2, -unitConfig.size + 2, unitConfig.size - 2, unitConfig.size * 2 - 4);
+          visual.graphics.fillStyle(unitConfig.secondaryColor, 0.7);
+          visual.graphics.fillRect(-s + 3, -s + 3, s - 3, s * 2 - 6);
+          // 화염 이펙트
+          const flameFlicker = Math.sin(time * 8) * 0.3;
+          visual.graphics.fillStyle(0xffff00, 0.4 + flameFlicker);
+          visual.graphics.fillCircle(s * 0.6, 0, 4);
         }
+        // 하이라이트
+        visual.graphics.fillStyle(0xffffff, 0.2);
+        visual.graphics.fillRect(-s + 2, -s + 2, s * 0.6, s * 0.6);
         break;
-      case 'diamond':
+      }
+      case 'diamond': {
+        const s = unitConfig.size;
+        // 외부 글로우
+        visual.graphics.fillStyle(colors.light, 0.2);
         visual.graphics.beginPath();
-        visual.graphics.moveTo(0, -unitConfig.size);
-        visual.graphics.lineTo(unitConfig.size, 0);
-        visual.graphics.lineTo(0, unitConfig.size);
-        visual.graphics.lineTo(-unitConfig.size, 0);
+        visual.graphics.moveTo(0, -s - 3);
+        visual.graphics.lineTo(s + 3, 0);
+        visual.graphics.lineTo(0, s + 3);
+        visual.graphics.lineTo(-s - 3, 0);
         visual.graphics.closePath();
         visual.graphics.fillPath();
+        // 메인 바디
+        visual.graphics.fillStyle(fillColor, 1);
+        visual.graphics.beginPath();
+        visual.graphics.moveTo(0, -s);
+        visual.graphics.lineTo(s, 0);
+        visual.graphics.lineTo(0, s);
+        visual.graphics.lineTo(-s, 0);
+        visual.graphics.closePath();
+        visual.graphics.fillPath();
+        visual.graphics.lineStyle(2, colors.dark, 1);
         visual.graphics.strokePath();
-        // Medic cross
+        // Medic 십자 마크 (펄스)
         if (unitConfig.secondaryColor) {
-          visual.graphics.fillStyle(unitConfig.secondaryColor, 1);
-          visual.graphics.fillRect(-2, -unitConfig.size * 0.5, 4, unitConfig.size);
-          visual.graphics.fillRect(-unitConfig.size * 0.5, -2, unitConfig.size, 4);
+          const crossPulse = 0.8 + Math.sin(time * 3) * 0.2;
+          visual.graphics.fillStyle(unitConfig.secondaryColor, crossPulse);
+          visual.graphics.fillRect(-2, -s * 0.5, 4, s);
+          visual.graphics.fillRect(-s * 0.5, -2, s, 4);
         }
         break;
+      }
       case 'hexagon': {
         const s = unitConfig.size;
+        // 외부 글로우
+        visual.graphics.fillStyle(colors.light, 0.15);
+        visual.graphics.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const angle = (Math.PI / 3) * i - Math.PI / 6;
+          const x = Math.cos(angle) * (s + 3);
+          const y = Math.sin(angle) * (s + 3);
+          if (i === 0) visual.graphics.moveTo(x, y);
+          else visual.graphics.lineTo(x, y);
+        }
+        visual.graphics.closePath();
+        visual.graphics.fillPath();
+        // 메인 바디
+        visual.graphics.fillStyle(fillColor, 1);
         visual.graphics.beginPath();
         for (let i = 0; i < 6; i++) {
           const angle = (Math.PI / 3) * i - Math.PI / 6;
@@ -198,28 +260,72 @@ export class UnitRenderer {
         }
         visual.graphics.closePath();
         visual.graphics.fillPath();
+        visual.graphics.lineStyle(2, colors.dark, 1);
         visual.graphics.strokePath();
+        // 내부 디테일
+        visual.graphics.fillStyle(colors.dark, 0.5);
+        visual.graphics.fillCircle(0, 0, s * 0.4);
         break;
       }
       case 'tank': {
         const s = unitConfig.size;
-        // Tank body (rectangle)
-        visual.graphics.fillRect(-s, -s * 0.6, s * 2, s * 1.2);
-        visual.graphics.strokeRect(-s, -s * 0.6, s * 2, s * 1.2);
-        // Tank turret (smaller rectangle)
-        visual.graphics.fillStyle(colors.dark, 1);
-        visual.graphics.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8);
-        // Tank barrel
         const tankUnit = entity.getComponent<Unit>(Unit);
         const isSieged = tankUnit?.isSieged || false;
-        const barrelLength = isSieged ? s * 1.5 : s * 0.8;
-        visual.graphics.lineStyle(4, colors.dark, 1);
-        visual.graphics.lineBetween(0, 0, barrelLength, 0);
-        // Siege mode indicator
+        
+        // 시즈 모드 외부 효과
         if (isSieged) {
-          visual.graphics.lineStyle(2, 0xff0000, 0.8);
-          visual.graphics.strokeCircle(0, 0, s + 4);
+          const siegePulse = 0.3 + Math.sin(time * 2) * 0.15;
+          visual.graphics.fillStyle(0xff4400, siegePulse);
+          visual.graphics.fillCircle(0, 0, s + 8);
         }
+        
+        // 트랙 (캐터필러)
+        visual.graphics.fillStyle(0x333333, 1);
+        visual.graphics.fillRect(-s - 2, -s * 0.7, s * 2 + 4, 4);
+        visual.graphics.fillRect(-s - 2, s * 0.3, s * 2 + 4, 4);
+        // 트랙 디테일
+        for (let i = 0; i < 5; i++) {
+          visual.graphics.fillStyle(0x555555, 1);
+          visual.graphics.fillRect(-s + i * (s * 0.5), -s * 0.7, 2, 4);
+          visual.graphics.fillRect(-s + i * (s * 0.5), s * 0.3, 2, 4);
+        }
+        
+        // 메인 바디 (그라데이션 효과)
+        visual.graphics.fillStyle(colors.dark, 1);
+        visual.graphics.fillRect(-s, -s * 0.55, s * 2, s * 1.1);
+        visual.graphics.fillStyle(fillColor, 1);
+        visual.graphics.fillRect(-s + 2, -s * 0.5, s * 2 - 4, s);
+        // 상부 하이라이트
+        visual.graphics.fillStyle(colors.light, 0.3);
+        visual.graphics.fillRect(-s + 2, -s * 0.5, s * 2 - 4, s * 0.3);
+        
+        // 포탑
+        visual.graphics.fillStyle(colors.dark, 1);
+        visual.graphics.fillCircle(0, 0, s * 0.5);
+        visual.graphics.fillStyle(fillColor, 1);
+        visual.graphics.fillCircle(0, 0, s * 0.4);
+        
+        // 포신
+        const barrelLength = isSieged ? s * 1.8 : s * 1.0;
+        const barrelWidth = isSieged ? 5 : 4;
+        visual.graphics.fillStyle(colors.dark, 1);
+        visual.graphics.fillRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
+        // 포신 끝
+        visual.graphics.fillStyle(0x444444, 1);
+        visual.graphics.fillRect(barrelLength - 4, -barrelWidth / 2 - 1, 4, barrelWidth + 2);
+        
+        // 시즈 모드 인디케이터
+        if (isSieged) {
+          visual.graphics.lineStyle(2, 0xff4400, 0.8);
+          visual.graphics.strokeCircle(0, 0, s + 5);
+          // "S" 텍스트 대신 시각적 표시
+          visual.graphics.fillStyle(0xff0000, 0.8);
+          visual.graphics.fillCircle(s * 0.8, -s * 0.3, 3);
+        }
+        
+        // 테두리
+        visual.graphics.lineStyle(1, colors.dark, 1);
+        visual.graphics.strokeRect(-s, -s * 0.55, s * 2, s * 1.1);
         break;
       }
     }

@@ -80,48 +80,96 @@ export class ResourceRenderer {
 
     const colors = RESOURCE_COLORS[resource.resourceType] || { main: 0xffffff, dark: 0x888888, glow: 0xffffff };
     const size = resource.resourceType === ResourceType.MINERALS ? 14 : 18;
+    const time = Date.now() / 1000;
 
     visual.graphics.setPosition(position.x, position.y);
-    visual.label.setPosition(position.x, position.y + size + 8);
+    visual.label.setPosition(position.x, position.y + size + 12);
 
     visual.graphics.clear();
 
     // 고갈된 자원은 어둡게
     const alpha = resource.isDepleted() ? 0.3 : 1;
 
-    // 외부 글로우
-    visual.graphics.fillStyle(colors.glow, 0.2 * alpha);
     if (resource.resourceType === ResourceType.MINERALS) {
-      // 미네랄: 다이아몬드/크리스탈 모양
-      this.drawDiamond(visual.graphics, 0, 0, size + 4);
-    } else {
-      // 가스: 원형
-      visual.graphics.fillCircle(0, 0, size + 4);
-    }
-
-    // 메인
-    visual.graphics.fillStyle(colors.main, alpha);
-    if (resource.resourceType === ResourceType.MINERALS) {
+      // === 미네랄: 반짝이는 크리스탈 ===
+      
+      // 외부 글로우 (펄스)
+      const glowPulse = 0.15 + Math.sin(time * 2) * 0.1;
+      visual.graphics.fillStyle(colors.glow, glowPulse * alpha);
+      this.drawDiamond(visual.graphics, 0, 0, size + 6);
+      
+      // 그림자
+      visual.graphics.fillStyle(0x000000, 0.3 * alpha);
+      this.drawDiamond(visual.graphics, 2, 2, size);
+      
+      // 메인 크리스탈
+      visual.graphics.fillStyle(colors.main, alpha);
       this.drawDiamond(visual.graphics, 0, 0, size);
-    } else {
-      visual.graphics.fillCircle(0, 0, size);
-      // 가스 분출 효과
-      visual.graphics.fillStyle(colors.glow, 0.5 * alpha);
-      visual.graphics.fillCircle(0, -size / 3, size / 3);
-    }
-
-    // 테두리
-    visual.graphics.lineStyle(2, colors.dark, alpha);
-    if (resource.resourceType === ResourceType.MINERALS) {
+      
+      // 내부 하이라이트 (3D 효과)
+      visual.graphics.fillStyle(0xffffff, 0.4 * alpha);
+      this.drawDiamond(visual.graphics, -size * 0.15, -size * 0.2, size * 0.4);
+      
+      // 반짝임 효과 (여러 개의 작은 스파클)
+      for (let i = 0; i < 3; i++) {
+        const sparkleTime = time * 3 + i * 2.1;
+        const sparkleAlpha = (Math.sin(sparkleTime) + 1) * 0.3 * alpha;
+        const sparkleX = Math.cos(i * 2.5) * size * 0.5;
+        const sparkleY = Math.sin(i * 2.5) * size * 0.4;
+        visual.graphics.fillStyle(0xffffff, sparkleAlpha);
+        visual.graphics.fillCircle(sparkleX, sparkleY, 2);
+      }
+      
+      // 테두리
+      visual.graphics.lineStyle(2, colors.dark, alpha);
       this.strokeDiamond(visual.graphics, 0, 0, size);
+      
     } else {
+      // === 가스 간헐천: 증기 효과 ===
+      
+      // 외부 글로우
+      const glowPulse = 0.2 + Math.sin(time * 1.5) * 0.1;
+      visual.graphics.fillStyle(colors.glow, glowPulse * alpha);
+      visual.graphics.fillCircle(0, 0, size + 5);
+      
+      // 그림자
+      visual.graphics.fillStyle(0x000000, 0.3 * alpha);
+      visual.graphics.fillCircle(2, 2, size);
+      
+      // 메인 원
+      visual.graphics.fillStyle(colors.main, alpha);
+      visual.graphics.fillCircle(0, 0, size);
+      
+      // 내부 어두운 구멍 (간헐천 입구)
+      visual.graphics.fillStyle(colors.dark, alpha);
+      visual.graphics.fillCircle(0, 0, size * 0.5);
+      visual.graphics.fillStyle(0x003311, alpha);
+      visual.graphics.fillCircle(0, 0, size * 0.3);
+      
+      // 증기/연기 파티클 효과
+      for (let i = 0; i < 4; i++) {
+        const particleTime = time * 2 + i * 1.5;
+        const particleY = -size * 0.3 - (particleTime % 1) * size * 0.8;
+        const particleAlpha = (1 - (particleTime % 1)) * 0.5 * alpha;
+        const particleSize = 3 + (particleTime % 1) * 4;
+        const particleX = Math.sin(particleTime * 3 + i) * 4;
+        
+        visual.graphics.fillStyle(colors.glow, particleAlpha);
+        visual.graphics.fillCircle(particleX, particleY, particleSize);
+      }
+      
+      // 테두리
+      visual.graphics.lineStyle(2, colors.dark, alpha);
       visual.graphics.strokeCircle(0, 0, size);
     }
 
     // 선택 표시
     if (selectable?.isSelected) {
-      visual.graphics.lineStyle(2, 0xffffff, 1);
-      visual.graphics.strokeCircle(0, 0, size + 6);
+      const selectPulse = 0.7 + Math.sin(time * 4) * 0.3;
+      visual.graphics.lineStyle(2, 0x00ff00, selectPulse);
+      visual.graphics.strokeCircle(0, 0, size + 8);
+      visual.graphics.lineStyle(1, 0xffffff, selectPulse * 0.5);
+      visual.graphics.strokeCircle(0, 0, size + 10);
     }
 
     // 남은 자원량 표시

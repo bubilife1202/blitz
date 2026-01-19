@@ -247,7 +247,7 @@ export class HUD {
 
       this.selectionInfo.setText(info);
     } else {
-      // 다중 선택
+      // 다중 선택 (멀티 선택 그리드 구현)
       const unitCount = selected.filter(e => e.getComponent<Unit>(Unit)).length;
       const buildingCount = selected.filter(e => e.getComponent<Building>(Building)).length;
       
@@ -256,6 +256,10 @@ export class HUD {
       if (buildingCount > 0) info += `\nBuildings: ${buildingCount}`;
       
       this.selectionInfo.setText(info);
+      this.selectionInfo.setPosition(10, 10);
+
+      // 개별 유닛 상태 그리드 표시
+      this.createSelectionGrid(selected);
       
       // 다중 SCV면 건물 버튼
       const hasGatherer = selected.some(e => e.getComponent<Gatherer>(Gatherer));
@@ -263,6 +267,47 @@ export class HUD {
         this.showBuildButtons();
       }
     }
+  }
+
+  // 멀티 선택 유닛 그리드 생성
+  private createSelectionGrid(entities: Entity[]): void {
+    const startX = 10;
+    const startY = 50;
+    const boxSize = 12;
+    const padding = 4;
+    const cols = 12;
+
+    entities.forEach((entity, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      const x = startX + col * (boxSize + padding);
+      const y = startY + row * (boxSize + padding);
+
+      const unit = entity.getComponent<Unit>(Unit);
+      const building = entity.getComponent<Building>(Building);
+      
+      let hpPercent = 1;
+      if (unit) hpPercent = unit.hp / unit.maxHp;
+      else if (building) hpPercent = building.hp / building.maxHp;
+
+      // 체력 색상
+      let color = 0x00ff00;
+      if (hpPercent < 0.3) color = 0xff0000;
+      else if (hpPercent < 0.6) color = 0xffff00;
+
+      // 배경 박스
+      const bg = this.scene.add.rectangle(x, y, boxSize, boxSize, 0x333333);
+      bg.setOrigin(0, 0);
+      bg.setStrokeStyle(1, 0x666666);
+      
+      // 체력 바 (내부)
+      const healthHeight = boxSize * hpPercent;
+      const hpBar = this.scene.add.rectangle(x + 1, y + boxSize - 1, boxSize - 2, healthHeight - 2, color);
+      hpBar.setOrigin(0, 1);
+
+      this.selectionPanel.add([bg, hpBar]);
+      this.dynamicButtons.push(bg, hpBar);
+    });
   }
 
   // 선택 정보 텍스트만 업데이트 (버튼 재생성 없이)

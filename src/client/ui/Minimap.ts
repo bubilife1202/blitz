@@ -106,6 +106,22 @@ export class Minimap {
     // 월드 좌표로 변환
     const worldX = localX / this.scale;
     const worldY = localY / this.scale;
+    
+    // 클릭 핑 효과
+    const ping = this.scene.add.graphics();
+    ping.setDepth(3005);
+    ping.setPosition(screenX, screenY);
+    ping.lineStyle(2, 0xffffff, 1);
+    ping.strokeCircle(0, 0, 10);
+    
+    this.scene.tweens.add({
+      targets: ping,
+      scale: 3,
+      alpha: 0,
+      duration: 400,
+      onComplete: () => ping.destroy()
+    });
+
     this.onMinimapClick?.(worldX, worldY);
   }
 

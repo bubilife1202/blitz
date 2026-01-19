@@ -45,7 +45,12 @@ export class Combat extends Component {
 
   clearTarget(): void {
     this.targetId = null;
-    this.state = CombatState.IDLE;
+    // A-Move 중이면 ATTACK_MOVING 상태 유지, 아니면 IDLE로
+    if (this.attackMoveTargetX !== null && this.attackMoveTargetY !== null) {
+      this.state = CombatState.ATTACK_MOVING;
+    } else {
+      this.state = CombatState.IDLE;
+    }
   }
 
   canAttack(): boolean {

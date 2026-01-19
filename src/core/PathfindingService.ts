@@ -11,6 +11,7 @@ export class PathfindingService {
   private tileSize: number;
   private mapWidth: number;
   private mapHeight: number;
+  private batchMode: boolean = false;
 
   constructor(config: GameConfig) {
     this.easystar = new EasyStar.js();
@@ -50,11 +51,24 @@ export class PathfindingService {
     };
   }
 
+  // 배치 모드 시작 (여러 장애물을 한번에 설정할 때 사용)
+  beginBatch(): void {
+    this.batchMode = true;
+  }
+
+  // 배치 모드 종료 및 그리드 적용
+  endBatch(): void {
+    this.batchMode = false;
+    this.easystar.setGrid(this.grid);
+  }
+
   // 타일을 장애물로 설정
   setObstacle(tileX: number, tileY: number): void {
     if (this.isValidTile(tileX, tileY)) {
       this.grid[tileY][tileX] = 1;
-      this.easystar.setGrid(this.grid);
+      if (!this.batchMode) {
+        this.easystar.setGrid(this.grid);
+      }
     }
   }
 
@@ -62,7 +76,9 @@ export class PathfindingService {
   clearObstacle(tileX: number, tileY: number): void {
     if (this.isValidTile(tileX, tileY)) {
       this.grid[tileY][tileX] = 0;
-      this.easystar.setGrid(this.grid);
+      if (!this.batchMode) {
+        this.easystar.setGrid(this.grid);
+      }
     }
   }
 
