@@ -264,15 +264,10 @@ export class PromptInput {
         this.historyText.setText('');
         return { success: true, message: 'Cleared' };
 
-      case 'setkey':
-        if (args.length === 0) return { success: false, message: 'Usage: setkey [Your-Gemini-API-Key]' };
-        geminiService.setApiKey(args[0]);
-        return { success: true, message: 'Gemini API Key set successfully!' };
-
       default:
-        // 일반 명령어 아님 -> AI 처리 시도
+        // 일반 명령어 아님 -> AI 처리 시도 (보안 프록시 사용)
         this.processAICommand(input);
-        return { success: true, message: 'AI Processing...' };
+        return { success: true, message: 'AI Analyzing command...' };
     }
   }
 
