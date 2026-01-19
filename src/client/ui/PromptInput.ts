@@ -13,6 +13,7 @@ import { Owner } from '@core/components/Owner';
 import { Unit } from '@core/components/Unit';
 import { Building } from '@core/components/Building';
 import { UnitType, BuildingType } from '@shared/types';
+import { geminiService, type AICmd } from '../services/GeminiService';
 
 interface CommandResult {
   success: boolean;
@@ -263,9 +264,87 @@ export class PromptInput {
         this.historyText.setText('');
         return { success: true, message: 'Cleared' };
 
+      case 'setkey':
+        if (args.length === 0) return { success: false, message: 'Usage: setkey [Your-Gemini-API-Key]' };
+        geminiService.setApiKey(args[0]);
+        return { success: true, message: 'Gemini API Key set successfully!' };
+
       default:
-        return { success: false, message: `Unknown command: ${command}. Type "help" for commands.` };
+        // 일반 명령어 아님 -> AI 처리 시도
+        this.processAICommand(input);
+        return { success: true, message: 'AI Processing...' };
     }
+  }
+
+  private async processAICommand(input: string): Promise<void> {
+    if (!geminiService.hasKey()) {
+      this.outputText.setText('> Error: API Key not set. Use "setkey [key]" first.');
+      this.outputText.setColor('#ff6666');
+      return;
+    }
+
+    try {
+      const commands = await geminiService.processNaturalLanguage(input);
+      this.executeAICommands(commands);
+    } catch (error: any) {
+      this.outputText.setText(`> AI Error: ${error.message}`);
+      this.outputText.setColor('#ff6666');
+    }
+  }
+
+  private executeAICommands(commands: AICmd[]): void {
+    if (commands.length === 0) {
+      this.outputText.setText('> AI could not understand the command.');
+      this.outputText.setColor('#ff6666');
+      return;
+    }
+
+    let summary = 'AI Executing: ';
+    
+    for (const cmd of commands) {
+      summary += `${cmd.type} `;
+      
+      switch (cmd.type) {
+        case 'select':
+          this.cmdSelect([cmd.target || 'all']);
+          break;
+        case 'move':
+          if (cmd.x !== undefined && cmd.y !== undefined) {
+            this.cmdMove([cmd.x.toString(), cmd.y.toString()]);
+          }
+          break;
+        case 'attack':
+          if (cmd.x !== undefined && cmd.y !== undefined) {
+            this.cmdAttack([cmd.x.toString(), cmd.y.toString()]);
+          }
+          break;
+        case 'build':
+          if (cmd.buildingType) {
+            this.cmdBuild([cmd.buildingType]);
+          }
+          break;
+        case 'train':
+          if (cmd.unitType) {
+            this.cmdTrain([cmd.unitType]);
+          }
+          break;
+        case 'hunt':
+          this.cmdHunt();
+          break;
+        case 'stop':
+          this.cmdStop();
+          break;
+        case 'siege':
+          this.cmdSiege();
+          break;
+        case 'stim':
+          this.cmdStim();
+          break;
+      }
+    }
+
+    this.outputText.setText(`> ${summary}`);
+    this.outputText.setColor('#00ffff');
   }
 
   private showHelp(): CommandResult {
