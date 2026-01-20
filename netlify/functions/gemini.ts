@@ -1,5 +1,4 @@
 import { Handler } from '@netlify/functions';
-import fetch from 'node-fetch';
 
 export const handler: Handler = async (event) => {
   // POST 요청만 허용
