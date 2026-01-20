@@ -40,6 +40,9 @@ import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS, canTrainUnit } from '@shared
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { combatEvents } from '@core/events/CombatEvents';
 import { soundManager } from '../audio/SoundManager';
+import { PlayerDirector } from '@core/PlayerDirector';
+import { DirectorPanel } from '../ui/DirectorPanel';
+import { PlanFeed } from '../ui/PlanFeed';
 
 interface GameSceneData {
   mode: 'single' | 'multi';
@@ -76,6 +79,11 @@ export class GameScene extends Phaser.Scene {
   private gameOverText!: Phaser.GameObjects.Text;
   private isPaused: boolean = false;
   private aiDifficulty: AIDifficulty = AIDifficulty.NORMAL;
+  
+  // 감독 모드
+  private playerDirector!: PlayerDirector;
+  private directorPanel!: DirectorPanel;
+  private planFeed!: PlanFeed;
   
   // 카메라 드래그
   private isDragging: boolean = false;
@@ -259,6 +267,19 @@ export class GameScene extends Phaser.Scene {
       this.togglePause();
     };
     
+    // 감독 모드 설정
+    this.playerDirector = new PlayerDirector(this.gameState, 1, this.pathfinding);
+    
+    this.directorPanel = new DirectorPanel(this);
+    this.directorPanel.onSettingsChange = (settings) => {
+      this.playerDirector.setSettings(settings);
+    };
+    
+    this.planFeed = new PlanFeed(this);
+    this.planFeed.onApprovalResponse = (_requestId, optionId) => {
+      this.playerDirector.respondToApproval(optionId);
+    };
+    
     // 전투 이벤트 구독 (이펙트 연동)
     this.setupCombatEventListeners();
     
@@ -293,6 +314,11 @@ export class GameScene extends Phaser.Scene {
     // HUD 업데이트
     this.hud.update();
     
+    // 감독 모드 UI 업데이트
+    const planSnapshot = this.playerDirector.getPlanSnapshot();
+    this.directorPanel.update(planSnapshot);
+    this.planFeed.update(planSnapshot);
+    
     // 카메라 업데이트
     this.updateCamera();
     
@@ -306,6 +332,9 @@ export class GameScene extends Phaser.Scene {
     if (tick % 10 === 0) {
       this.aiController.update();
     }
+    
+    // 플레이어 감독 모드 업데이트 (매 틱)
+    this.playerDirector.update();
   }
 
   // ==========================================
