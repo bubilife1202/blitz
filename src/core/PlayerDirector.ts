@@ -104,7 +104,20 @@ export class PlayerDirector {
   // 공격 준비 상태
   private attackReadyThreshold = 6; // 이 수 이상이면 공격 제안
   private lastAttackSuggestionTick = 0;
-  private attackSuggestionCooldown = 480; // 30초
+  private attackSuggestionCooldown = 240; // 15초 (더 빠르게)
+  
+  // 다양한 제안 쿨다운
+  private lastExpandSuggestionTick = 0;
+  private expandSuggestionCooldown = 320; // 20초
+  private lastTechSuggestionTick = 0;
+  private techSuggestionCooldown = 400; // 25초
+  private lastDefenseSuggestionTick = 0;
+  private defenseSuggestionCooldown = 160; // 10초
+  
+  // 이벤트 감지
+  private lastArmyCount = 0;
+  private lastEnemyCheckTick = 0;
+  private enemyCheckInterval = 32; // 2초마다 적 체크
   
   // 플레이어 수동 조작 감지 (잠시 손 떼기)
   private lastManualCommandTick = 0;
@@ -155,13 +168,32 @@ export class PlayerDirector {
     
     const request = this.approvalRequest;
     this.approvalRequest = null;
+    const currentTick = this.gameState.getCurrentTick();
     
-    if (request.type === 'attack' && optionId === 'approve') {
-      this.launchAttack();
-      this.addLog('공격 개시!', 'action');
-    } else if (optionId === 'deny') {
-      this.addLog('공격 대기', 'info');
-      this.lastAttackSuggestionTick = this.gameState.getCurrentTick(); // 쿨다운 리셋
+    if (request.type === 'attack') {
+      if (optionId === 'approve') {
+        this.launchAttack();
+        this.addLog('공격 개시!', 'action');
+      } else {
+        this.addLog('공격 대기', 'info');
+        this.lastAttackSuggestionTick = currentTick;
+      }
+    } else if (request.type === 'expand') {
+      if (optionId === 'approve') {
+        this.buildExpansion();
+        this.addLog('확장 시작!', 'action');
+      } else {
+        this.addLog('확장 보류', 'info');
+        this.lastExpandSuggestionTick = currentTick;
+      }
+    } else if (request.type === 'tech') {
+      if (optionId === 'approve') {
+        this.buildTechBuilding();
+        this.addLog('테크 전환!', 'action');
+      } else {
+        this.addLog('테크 보류', 'info');
+        this.lastTechSuggestionTick = currentTick;
+      }
     }
   }
 
@@ -201,8 +233,16 @@ export class PlayerDirector {
       this.checkSupplyBlock(resources);
     }
     
-    // 공격 타이밍 제안
-    this.checkAttackTiming(currentTick);
+    // 다양한 제안 체크 (승인 요청 없을 때만)
+    if (!this.approvalRequest) {
+      this.checkAttackTiming(currentTick);
+      this.checkExpandTiming(currentTick, resources);
+      this.checkTechTiming(currentTick, resources);
+      this.checkEnemyApproach(currentTick);
+    }
+    
+    // 유닛 손실 감지
+    this.checkArmyLoss();
   }
 
   // 계획 액션 업데이트
@@ -441,6 +481,208 @@ export class PlayerDirector {
         movement.setTarget(targetPos.x, targetPos.y);
       }
     }
+  }
+
+  // 확장 타이밍 제안
+  private checkExpandTiming(currentTick: number, resources: { minerals: number; gas: number }): void {
+    if (currentTick - this.lastExpandSuggestionTick < this.expandSuggestionCooldown) return;
+    
+    // 미네랄이 400 이상이고 커맨드센터가 1개일 때
+    const commandCenters = this.getMyBuildings().filter(b => 
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+    );
+    
+    if (resources.minerals >= 400 && commandCenters.length === 1) {
+      this.approvalRequest = {
+        id: `expand-${currentTick}`,
+        type: 'expand',
+        title: '확장 타이밍',
+        description: `자원이 충분합니다 (${resources.minerals}). 확장할까요?`,
+        options: [
+          { id: 'approve', label: '확장!' },
+          { id: 'deny', label: '나중에' },
+        ],
+      };
+      this.lastExpandSuggestionTick = currentTick;
+    }
+  }
+
+  // 테크 전환 제안
+  private checkTechTiming(currentTick: number, resources: { minerals: number; gas: number }): void {
+    if (currentTick - this.lastTechSuggestionTick < this.techSuggestionCooldown) return;
+    
+    const myBuildings = this.getMyBuildings();
+    const buildingTypes = myBuildings.map(b => b.getComponent<Building>(Building)!.buildingType);
+    
+    const hasBarracks = buildingTypes.includes(BuildingType.BARRACKS);
+    const hasFactory = buildingTypes.includes(BuildingType.FACTORY);
+    
+    // 배럭은 있는데 팩토리가 없고, 자원이 충분할 때
+    if (hasBarracks && !hasFactory && resources.minerals >= 200 && resources.gas >= 100) {
+      this.approvalRequest = {
+        id: `tech-${currentTick}`,
+        type: 'tech',
+        title: '테크 전환',
+        description: '팩토리를 건설해서 기갑 유닛을 생산할까요?',
+        options: [
+          { id: 'approve', label: '팩토리!' },
+          { id: 'deny', label: '보병 유지' },
+        ],
+      };
+      this.lastTechSuggestionTick = currentTick;
+    }
+  }
+
+  // 적 접근 감지
+  private checkEnemyApproach(currentTick: number): void {
+    if (currentTick - this.lastEnemyCheckTick < this.enemyCheckInterval) return;
+    this.lastEnemyCheckTick = currentTick;
+    
+    if (currentTick - this.lastDefenseSuggestionTick < this.defenseSuggestionCooldown) return;
+    
+    // 내 커맨드센터 위치
+    const myCC = this.getMyBuildings().find(b => 
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+    );
+    if (!myCC) return;
+    
+    const ccPos = myCC.getComponent<Position>(Position);
+    if (!ccPos) return;
+    
+    // 적 유닛이 내 베이스 근처에 있는지 체크
+    const enemies = this.getEnemyEntities().filter(e => e.getComponent<Unit>(Unit));
+    const nearbyEnemies = enemies.filter(e => {
+      const pos = e.getComponent<Position>(Position);
+      if (!pos) return false;
+      const dist = Math.sqrt(Math.pow(pos.x - ccPos.x, 2) + Math.pow(pos.y - ccPos.y, 2));
+      return dist < 400; // 400픽셀 이내
+    });
+    
+    if (nearbyEnemies.length >= 2) {
+      this.addLog(`경고: 적 ${nearbyEnemies.length}기 접근 중!`, 'warning');
+      this.lastDefenseSuggestionTick = currentTick;
+    }
+  }
+
+  // 유닛 손실 감지
+  private checkArmyLoss(): void {
+    const currentArmy = this.getCombatUnits().length;
+    
+    if (this.lastArmyCount > 0 && currentArmy < this.lastArmyCount) {
+      const lost = this.lastArmyCount - currentArmy;
+      if (lost >= 2) {
+        this.addLog(`유닛 ${lost}기 손실!`, 'warning');
+      }
+    }
+    
+    this.lastArmyCount = currentArmy;
+  }
+
+  // 확장 건설
+  private buildExpansion(): void {
+    const idleWorkers = this.getIdleWorkers();
+    if (idleWorkers.length === 0) {
+      this.addLog('건설 가능한 SCV 없음', 'warning');
+      return;
+    }
+    
+    const resources = this.gameState.getPlayerResources(this.playerId);
+    if (!resources || resources.minerals < BUILDING_STATS[BuildingType.COMMAND_CENTER].mineralCost) {
+      this.addLog('자원 부족', 'warning');
+      return;
+    }
+    
+    const buildPos = this.findExpansionLocation();
+    if (!buildPos) {
+      this.addLog('확장 위치를 찾을 수 없음', 'warning');
+      return;
+    }
+    
+    const worker = idleWorkers[0];
+    this.gameState.modifyPlayerResources(this.playerId, {
+      minerals: -BUILDING_STATS[BuildingType.COMMAND_CENTER].mineralCost,
+    });
+    
+    const builder = worker.getComponent<Builder>(Builder);
+    const gatherer = worker.getComponent<Gatherer>(Gatherer);
+    const movement = worker.getComponent<Movement>(Movement);
+    
+    if (builder && movement) {
+      builder.startBuildCommand(BuildingType.COMMAND_CENTER, buildPos.x, buildPos.y);
+      movement.setTarget(buildPos.x, buildPos.y);
+      if (gatherer) gatherer.stop();
+    }
+  }
+
+  // 테크 건물 건설
+  private buildTechBuilding(): void {
+    const idleWorkers = this.getIdleWorkers();
+    if (idleWorkers.length === 0) {
+      this.addLog('건설 가능한 SCV 없음', 'warning');
+      return;
+    }
+    
+    const resources = this.gameState.getPlayerResources(this.playerId);
+    if (!resources || 
+        resources.minerals < BUILDING_STATS[BuildingType.FACTORY].mineralCost ||
+        resources.gas < BUILDING_STATS[BuildingType.FACTORY].gasCost) {
+      this.addLog('자원 부족', 'warning');
+      return;
+    }
+    
+    const buildPos = this.findBuildLocation(BuildingType.FACTORY);
+    if (!buildPos) {
+      this.addLog('건설 위치를 찾을 수 없음', 'warning');
+      return;
+    }
+    
+    const worker = idleWorkers[0];
+    this.gameState.modifyPlayerResources(this.playerId, {
+      minerals: -BUILDING_STATS[BuildingType.FACTORY].mineralCost,
+      gas: -BUILDING_STATS[BuildingType.FACTORY].gasCost,
+    });
+    
+    const builder = worker.getComponent<Builder>(Builder);
+    const gatherer = worker.getComponent<Gatherer>(Gatherer);
+    const movement = worker.getComponent<Movement>(Movement);
+    
+    if (builder && movement) {
+      builder.startBuildCommand(BuildingType.FACTORY, buildPos.x, buildPos.y);
+      movement.setTarget(buildPos.x, buildPos.y);
+      if (gatherer) gatherer.stop();
+    }
+  }
+
+  // 확장 위치 찾기 (기존 베이스에서 멀리)
+  private findExpansionLocation(): { x: number; y: number } | null {
+    const tileSize = this.gameState.config.tileSize;
+    const mapWidth = this.gameState.config.mapWidth;
+    const mapHeight = this.gameState.config.mapHeight;
+    
+    // 맵 중앙 근처에서 확장 위치 찾기
+    const centerX = Math.floor(mapWidth / 2);
+    const centerY = Math.floor(mapHeight / 2);
+    
+    const stats = BUILDING_STATS[BuildingType.COMMAND_CENTER];
+    
+    for (let radius = 5; radius < 20; radius++) {
+      for (let angle = 0; angle < 8; angle++) {
+        const offsetX = Math.round(Math.cos(angle * Math.PI / 4) * radius);
+        const offsetY = Math.round(Math.sin(angle * Math.PI / 4) * radius);
+        
+        const tileX = centerX + offsetX;
+        const tileY = centerY + offsetY;
+        
+        if (this.canPlaceBuilding(tileX, tileY, stats.size.width, stats.size.height)) {
+          return {
+            x: tileX * tileSize + (stats.size.width * tileSize) / 2,
+            y: tileY * tileSize + (stats.size.height * tileSize) / 2,
+          };
+        }
+      }
+    }
+    
+    return null;
   }
 
   // 계획 스냅샷 (UI용)
