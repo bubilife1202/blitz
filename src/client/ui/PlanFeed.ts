@@ -120,61 +120,83 @@ export class PlanFeed {
 
   private renderApprovalCard(request: ApprovalRequest, y: number): void {
     const cardW = 170;
-    const cardH = 55;
+    const cardH = 70; // 더 크게
     const x = 10;
     
     const container = this.scene.add.container(x, y);
     
     // 배경 (강조)
-    const bg = this.scene.add.rectangle(0, 0, cardW, cardH, 0x442200, 0.9);
+    const bg = this.scene.add.rectangle(0, 0, cardW, cardH, 0x442200, 0.95);
     bg.setOrigin(0, 0);
-    bg.setStrokeStyle(2, 0xff8800);
+    bg.setStrokeStyle(3, 0xff8800);
     container.add(bg);
     
     // 제목
-    const title = this.scene.add.text(5, 3, `⚠ ${request.title}`, {
-      fontSize: '10px',
+    const title = this.scene.add.text(cardW / 2, 8, `⚠ ${request.title}`, {
+      fontSize: '12px',
       color: '#ffaa00',
       fontStyle: 'bold',
     });
+    title.setOrigin(0.5, 0);
     container.add(title);
     
     // 설명
-    const desc = this.scene.add.text(5, 18, request.description, {
+    const desc = this.scene.add.text(cardW / 2, 26, request.description, {
       fontSize: '9px',
       color: '#cccccc',
-      wordWrap: { width: cardW - 10 },
+      wordWrap: { width: cardW - 20 },
+      align: 'center',
     });
+    desc.setOrigin(0.5, 0);
     container.add(desc);
     
-    // 버튼들
-    const btnW = 60;
-    const btnH = 18;
-    const btnY = cardH - btnH - 5;
+    // 버튼들 - 더 크고 눈에 띄게
+    const btnW = 70;
+    const btnH = 24;
+    const btnY = cardH - btnH - 8;
+    const totalBtnWidth = request.options.length * btnW + (request.options.length - 1) * 10;
+    const startX = (cardW - totalBtnWidth) / 2;
     
     request.options.forEach((opt, i) => {
-      const btnX = 5 + i * (btnW + 10);
+      const btnX = startX + i * (btnW + 10);
       const isApprove = opt.id === 'approve';
       
-      const btn = this.scene.add.rectangle(btnX, btnY, btnW, btnH, isApprove ? 0x227722 : 0x772222);
-      btn.setOrigin(0, 0);
-      btn.setStrokeStyle(1, isApprove ? 0x44ff44 : 0xff4444);
-      btn.setInteractive({ useHandCursor: true });
+      // 버튼을 scene에 직접 추가하고 depth 높게 설정
+      const worldX = this.container.x + x + btnX;
+      const worldY = this.container.y + y + btnY;
       
-      const btnText = this.scene.add.text(btnX + btnW / 2, btnY + btnH / 2, opt.label, {
-        fontSize: '10px',
+      const btn = this.scene.add.rectangle(worldX, worldY, btnW, btnH, isApprove ? 0x227722 : 0x772222);
+      btn.setOrigin(0, 0);
+      btn.setStrokeStyle(2, isApprove ? 0x44ff44 : 0xff4444);
+      btn.setInteractive({ useHandCursor: true });
+      btn.setScrollFactor(0);
+      btn.setDepth(3200); // 높은 depth
+      
+      const btnText = this.scene.add.text(worldX + btnW / 2, worldY + btnH / 2, opt.label, {
+        fontSize: '12px',
         color: '#ffffff',
         fontStyle: 'bold',
       });
       btnText.setOrigin(0.5);
+      btnText.setScrollFactor(0);
+      btnText.setDepth(3201);
       
-      btn.on('pointerover', () => btn.setFillStyle(isApprove ? 0x339933 : 0x993333));
-      btn.on('pointerout', () => btn.setFillStyle(isApprove ? 0x227722 : 0x772222));
-      btn.on('pointerdown', () => {
+      btn.on('pointerover', () => {
+        btn.setFillStyle(isApprove ? 0x339933 : 0x993333);
+        btn.setStrokeStyle(3, isApprove ? 0x66ff66 : 0xff6666);
+      });
+      btn.on('pointerout', () => {
+        btn.setFillStyle(isApprove ? 0x227722 : 0x772222);
+        btn.setStrokeStyle(2, isApprove ? 0x44ff44 : 0xff4444);
+      });
+      btn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        pointer.event.stopPropagation();
+        console.log('Approval button clicked:', opt.id);
         this.onApprovalResponse?.(request.id, opt.id);
       });
       
-      container.add([btn, btnText]);
+      // 버튼은 별도로 추적 (container 밖)
+      this.actionCards.push(this.createTempContainer(btn, btnText));
     });
     
     this.container.add(container);
