@@ -406,7 +406,9 @@ export class GameScene extends Phaser.Scene {
     });
 
     // 키보드 단축키
+    // ESC는 프롬프트 닫기에도 사용되므로 별도 처리
     this.input.keyboard?.on('keydown-ESC', () => {
+      if (this.promptInput?.isOpen()) return; // 프롬프트 열려있으면 무시
       // 게임 오버 상태면 메인 메뉴로
       if (this.gameState.isGameOver()) {
         this.goToMainMenu();
@@ -416,6 +418,7 @@ export class GameScene extends Phaser.Scene {
     });
     
     this.input.keyboard?.on('keydown-SPACE', () => {
+      if (this.promptInput?.isOpen()) return;
       const selected = this.selectionManager.getSelectedEntities();
       if (selected.length > 0) {
         const pos = selected[0].getComponent<Position>(Position);
@@ -427,66 +430,81 @@ export class GameScene extends Phaser.Scene {
 
     // 건물 건설 단축키 (SCV 선택시)
     this.input.keyboard?.on('keydown-B', () => {
+      if (this.promptInput?.isOpen()) return;
       this.buildingPlacer.startPlacement(BuildingType.BARRACKS);
     });
     this.input.keyboard?.on('keydown-D', () => {
+      if (this.promptInput?.isOpen()) return;
       this.buildingPlacer.startPlacement(BuildingType.SUPPLY_DEPOT);
     });
     this.input.keyboard?.on('keydown-C', () => {
+      if (this.promptInput?.isOpen()) return;
       this.buildingPlacer.startPlacement(BuildingType.COMMAND_CENTER);
     });
     this.input.keyboard?.on('keydown-E', () => {
+      if (this.promptInput?.isOpen()) return;
       this.buildingPlacer.startPlacement(BuildingType.ENGINEERING_BAY);
     });
     this.input.keyboard?.on('keydown-F', () => {
+      if (this.promptInput?.isOpen()) return;
       this.buildingPlacer.startPlacement(BuildingType.FACTORY);
     });
     this.input.keyboard?.on('keydown-R', () => {
+      if (this.promptInput?.isOpen()) return;
       this.buildingPlacer.startPlacement(BuildingType.ARMORY);
     });
     
     // Siege Tank 시즈 모드 토글
     this.input.keyboard?.on('keydown-O', () => {
+      if (this.promptInput?.isOpen()) return;
       this.toggleSiegeMode();
     });
     
     // Stim Pack 활성화
     this.input.keyboard?.on('keydown-T', () => {
+      if (this.promptInput?.isOpen()) return;
       this.activateStimPack();
     });
     
     // 유닛 생산 단축키 (건물이 선택되었을 때만 작동)
     this.input.keyboard?.on('keydown-S', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.SCV);
       }
     });
     this.input.keyboard?.on('keydown-M', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.MARINE);
       }
     });
     this.input.keyboard?.on('keydown-I', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.FIREBAT);
       }
     });
     this.input.keyboard?.on('keydown-H', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.MEDIC);
       }
     });
     this.input.keyboard?.on('keydown-V', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.VULTURE);
       }
     });
     this.input.keyboard?.on('keydown-G', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.GOLIATH);
       }
     });
     this.input.keyboard?.on('keydown-K', () => {
+      if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
         this.trainUnit(UnitType.SIEGE_TANK);
       }

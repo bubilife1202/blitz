@@ -12,7 +12,9 @@ import { Position } from '@core/components/Position';
 import { Owner } from '@core/components/Owner';
 import { Unit } from '@core/components/Unit';
 import { Building } from '@core/components/Building';
-import { UnitType, BuildingType } from '@shared/types';
+import { Resource } from '@core/components/Resource';
+import { Gatherer } from '@core/components/Gatherer';
+import { UnitType, BuildingType, ResourceType } from '@shared/types';
 import { geminiService, type AICmd } from '../services/GeminiService';
 
 interface CommandResult {
@@ -243,6 +245,10 @@ export class PromptInput {
       case 'kill':
         return this.cmdHunt();
 
+      case 'gather':
+      case 'g':
+        return this.cmdGather(args);
+
       case 'siege':
         return this.cmdSiege();
 
@@ -325,6 +331,9 @@ export class PromptInput {
           break;
         case 'hunt':
           this.cmdHunt();
+          break;
+        case 'gather':
+          this.cmdGather([cmd.resourceType || 'minerals']);
           break;
         case 'stop':
           this.cmdStop();
@@ -537,6 +546,109 @@ export class PromptInput {
     };
   }
 
+  // 스마트 자원 채취 명령
+  private cmdGather(args: string[]): CommandResult {
+    const resourceType = args[0] || 'minerals';
+    const isGas = resourceType === 'gas';
+
+    const selected = this.selectionManager.getSelectedEntities();
+    const workers = selected.filter(e => {
+      const unit = e.getComponent<Unit>(Unit);
+      return unit?.unitType === UnitType.SCV;
+    });
+
+    if (workers.length === 0) {
+      return { success: false, message: 'No SCVs selected' };
+    }
+
+    const allEntities = this.gameState.getAllEntities();
+    
+    // 자원 목록 수집 (미네랄 또는 리파이너리)
+    const resources: Array<{ entity: Entity; pos: Position; assignedCount: number }> = [];
+    
+    for (const entity of allEntities) {
+      const pos = entity.getComponent<Position>(Position);
+      if (!pos) continue;
+
+      if (isGas) {
+        // 가스: 완성된 리파이너리만
+        const building = entity.getComponent<Building>(Building);
+        const owner = entity.getComponent<Owner>(Owner);
+        if (building?.buildingType === BuildingType.REFINERY && 
+            !building.isConstructing && 
+            owner?.playerId === this.localPlayerId) {
+          const assignedCount = this.countAssignedWorkers(entity.id);
+          if (assignedCount < 3) { // 리파이너리당 최대 3명
+            resources.push({ entity, pos, assignedCount });
+          }
+        }
+      } else {
+        // 미네랄: Resource 컴포넌트가 있고 미네랄 타입인 것
+        const resource = entity.getComponent<Resource>(Resource);
+        if (resource && resource.resourceType === ResourceType.MINERALS && !resource.isDepleted()) {
+          const assignedCount = this.countAssignedWorkers(entity.id);
+          if (assignedCount < 2) { // 미네랄당 최대 2명
+            resources.push({ entity, pos, assignedCount });
+          }
+        }
+      }
+    }
+
+    if (resources.length === 0) {
+      return { success: false, message: isGas ? 'No available refineries (build one first!)' : 'No available minerals' };
+    }
+
+    // 각 일꾼별로 최적 자원 할당
+    let gatherCount = 0;
+    const congestionPenalty = 100; // 혼잡도 페널티
+
+    for (const worker of workers) {
+      const workerPos = worker.getComponent<Position>(Position)!;
+      
+      // 점수 = 거리 + (할당된 일꾼 수 * 페널티)
+      let bestResource: typeof resources[0] | null = null;
+      let bestScore = Infinity;
+
+      for (const res of resources) {
+        const dist = workerPos.distanceTo(res.pos);
+        const score = dist + (res.assignedCount * congestionPenalty);
+        if (score < bestScore) {
+          bestScore = score;
+          bestResource = res;
+        }
+      }
+
+      if (bestResource) {
+        this.commandManager.issueGatherCommand(
+          bestResource.entity.id,
+          bestResource.pos.x,
+          bestResource.pos.y
+        );
+        bestResource.assignedCount++; // 할당 수 증가 (다음 일꾼 계산에 반영)
+        gatherCount++;
+      }
+    }
+
+    return {
+      success: gatherCount > 0,
+      message: gatherCount > 0 
+        ? `${gatherCount} SCV(s) gathering ${resourceType}` 
+        : 'Could not assign workers to resources'
+    };
+  }
+
+  // 특정 자원에 할당된 일꾼 수 계산
+  private countAssignedWorkers(resourceId: number): number {
+    let count = 0;
+    for (const entity of this.gameState.getAllEntities()) {
+      const gatherer = entity.getComponent<Gatherer>(Gatherer);
+      if (gatherer && gatherer.targetResourceId === resourceId) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   private cmdSiege(): CommandResult {
     const selected = this.selectionManager.getSelectedEntities();
     let toggled = 0;
@@ -611,6 +723,19 @@ export class PromptInput {
   show(): void {
     this.isVisible = true;
     this.container.setVisible(true);
+    
+    // 화면 크기에 맞춰 위치 재계산
+    const width = this.scene.scale.width;
+    const height = this.scene.scale.height;
+    
+    // HTML Input 위치 동적 조정
+    const canvas = this.scene.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    
+    this.inputElement.style.left = `${rect.left + (width / 2 - 300) * (rect.width / width)}px`;
+    this.inputElement.style.top = `${rect.top + (height - 55) * (rect.height / height)}px`;
+    this.inputElement.style.width = `${600 * (rect.width / width)}px`;
+    
     this.inputElement.style.display = 'block';
     this.inputElement.focus();
   }

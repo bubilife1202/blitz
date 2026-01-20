@@ -9,6 +9,7 @@ export interface AICmd {
   y?: number;
   buildingType?: string;
   unitType?: string;
+  resourceType?: string;
 }
 
 export class GeminiService {
@@ -26,11 +27,13 @@ export class GeminiService {
       4. { "type": "build", "buildingType": "depot" | "barracks" | "factory" | "refinery" | "armory" }
       5. { "type": "train", "unitType": "scv" | "marine" | "firebat" | "medic" | "tank" | "goliath" }
       6. { "type": "hunt" }
-      7. { "type": "stop" }
-      8. { "type": "siege" }
-      9. { "type": "stim" }
+      7. { "type": "gather", "resourceType": "minerals" | "gas" }
+      8. { "type": "stop" }
+      9. { "type": "siege" }
+      10. { "type": "stim" }
       
       응답은 반드시 순수 JSON 배열만 반환하세요.
+      예시: "일꾼들 일시켜" -> [{"type": "select", "target": "scv"}, {"type": "gather", "resourceType": "minerals"}]
     `;
 
     try {
