@@ -15,6 +15,8 @@ import { Building } from '@core/components/Building';
 import { Resource } from '@core/components/Resource';
 import { Gatherer } from '@core/components/Gatherer';
 import { UnitType, BuildingType, ResourceType } from '@shared/types';
+import { ProductionQueue } from '@core/components/ProductionQueue';
+import { UNIT_STATS, BUILDING_STATS } from '@shared/constants';
 import { geminiService, type AICmd } from '../services/GeminiService';
 
 interface CommandResult {
@@ -40,6 +42,10 @@ export class PromptInput {
   private isVisible: boolean = false;
   private commandHistory: string[] = [];
   private historyIndex: number = -1;
+
+  // 자동화 시스템
+  private autoProduction: Map<UnitType, boolean> = new Map();
+  private autoProductionTimer?: Phaser.Time.TimerEvent;
 
   // 콜백
   public onTrainUnit?: (unitType: UnitType) => void;
@@ -261,6 +267,9 @@ export class PromptInput {
       case 'resources':
       case 'res':
         return this.cmdResources();
+
+      case 'auto':
+        return this.cmdAuto(args);
 
       case 'pause':
         this.onTogglePause?.();
@@ -496,8 +505,67 @@ export class PromptInput {
       return { success: false, message: `Unknown unit: ${args[0]}` };
     }
 
-    this.onTrainUnit?.(unitType);
-    return { success: true, message: `Training ${unitType}` };
+    // 선택된 건물 없으면 자동으로 생산 가능한 건물 찾기
+    const result = this.trainUnitAuto(unitType);
+    return result;
+  }
+  
+  // 자동으로 생산 건물 찾아서 유닛 생산
+  private trainUnitAuto(unitType: UnitType): CommandResult {
+    const stats = UNIT_STATS[unitType];
+    const resources = this.gameState.getPlayerResources(this.localPlayerId);
+    
+    if (!resources) {
+      return { success: false, message: 'No resources' };
+    }
+    
+    // 자원 체크
+    if (resources.minerals < stats.mineralCost || resources.gas < stats.gasCost) {
+      return { success: false, message: `Not enough resources (need ${stats.mineralCost}M ${stats.gasCost}G)` };
+    }
+    
+    if (resources.supply + stats.supplyCost > resources.supplyMax) {
+      return { success: false, message: 'Not enough supply' };
+    }
+    
+    // 생산 가능한 건물 찾기
+    const producerType = this.getProducerBuilding(unitType);
+    if (!producerType) {
+      return { success: false, message: `No building can produce ${unitType}` };
+    }
+    
+    // 해당 건물 찾기
+    for (const entity of this.gameState.getAllEntities()) {
+      const owner = entity.getComponent<Owner>(Owner);
+      const building = entity.getComponent<Building>(Building);
+      const queue = entity.getComponent<ProductionQueue>(ProductionQueue);
+      
+      if (!owner || owner.playerId !== this.localPlayerId) continue;
+      if (!building || building.buildingType !== producerType) continue;
+      if (!queue || building.isConstructing) continue;
+      if (!queue.canQueue()) continue;
+      
+      // 생산 시작
+      queue.addToQueue(unitType, stats.buildTime);
+      this.gameState.modifyPlayerResources(this.localPlayerId, {
+        minerals: -stats.mineralCost,
+        gas: -stats.gasCost,
+      });
+      
+      return { success: true, message: `Training ${unitType} at ${producerType}` };
+    }
+    
+    return { success: false, message: `No available ${producerType} to train ${unitType}` };
+  }
+  
+  // 유닛을 생산할 수 있는 건물 타입 반환
+  private getProducerBuilding(unitType: UnitType): BuildingType | null {
+    for (const [buildingType, stats] of Object.entries(BUILDING_STATS)) {
+      if (stats.canProduce?.includes(unitType)) {
+        return buildingType as BuildingType;
+      }
+    }
+    return null;
   }
 
   private cmdHunt(): CommandResult {
@@ -718,6 +786,84 @@ export class PromptInput {
       success: true,
       message: `Minerals: ${res.minerals} | Gas: ${res.gas} | Supply: ${res.supply}/${res.supplyMax}`
     };
+  }
+
+  private cmdAuto(args: string[]): CommandResult {
+    if (args.length === 0) {
+      // 현재 자동화 상태 표시
+      const activeAutos: string[] = [];
+      this.autoProduction.forEach((enabled, unitType) => {
+        if (enabled) activeAutos.push(unitType);
+      });
+      
+      if (activeAutos.length === 0) {
+        return { success: true, message: 'No auto-production active. Usage: auto [scv/marine/off]' };
+      }
+      return { success: true, message: `Auto-producing: ${activeAutos.join(', ')}` };
+    }
+
+    const arg = args[0].toLowerCase();
+    
+    if (arg === 'off' || arg === 'stop') {
+      // 모든 자동화 중지
+      this.autoProduction.clear();
+      if (this.autoProductionTimer) {
+        this.autoProductionTimer.remove();
+        this.autoProductionTimer = undefined;
+      }
+      return { success: true, message: 'All auto-production stopped' };
+    }
+
+    const typeMap: Record<string, UnitType> = {
+      'scv': UnitType.SCV,
+      'marine': UnitType.MARINE,
+      'firebat': UnitType.FIREBAT,
+      'medic': UnitType.MEDIC,
+      'vulture': UnitType.VULTURE,
+      'tank': UnitType.SIEGE_TANK,
+      'goliath': UnitType.GOLIATH,
+    };
+
+    const unitType = typeMap[arg];
+    if (!unitType) {
+      return { success: false, message: `Unknown unit: ${arg}. Use: scv, marine, firebat, medic, vulture, tank, goliath` };
+    }
+
+    // 토글
+    const currentState = this.autoProduction.get(unitType) || false;
+    this.autoProduction.set(unitType, !currentState);
+
+    if (!currentState) {
+      // 자동 생산 시작
+      this.startAutoProduction();
+      return { success: true, message: `Auto-production ON: ${unitType}` };
+    } else {
+      return { success: true, message: `Auto-production OFF: ${unitType}` };
+    }
+  }
+
+  private startAutoProduction(): void {
+    // 이미 타이머 있으면 스킵
+    if (this.autoProductionTimer) return;
+
+    // 2초마다 자동 생산 체크
+    this.autoProductionTimer = this.scene.time.addEvent({
+      delay: 2000,
+      callback: () => this.processAutoProduction(),
+      loop: true,
+    });
+  }
+
+  private processAutoProduction(): void {
+    // 활성화된 자동 생산 처리
+    for (const [unitType, enabled] of this.autoProduction) {
+      if (!enabled) continue;
+      
+      const result = this.trainUnitAuto(unitType);
+      if (result.success) {
+        console.log(`[Auto] ${result.message}`);
+      }
+    }
   }
 
   show(): void {
