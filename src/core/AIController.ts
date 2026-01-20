@@ -23,6 +23,16 @@ export enum AIState {
   BUILDING_UP = 'building_up',
   ATTACKING = 'attacking',
   DEFENDING = 'defending',
+  HARASSING = 'harassing',
+}
+
+// 전략 타입
+export enum AIStrategy {
+  RUSH = 'rush',           // 초반 빠른 공격 (적은 유닛으로 빠르게)
+  TIMING = 'timing',       // 타이밍 공격 (특정 유닛 수 도달시)
+  HARASS = 'harass',       // 기습 (소규모로 자원라인 공격)
+  CONTAIN = 'contain',     // 견제 (적 확장 방해)
+  MACRO = 'macro',         // 매크로 (경제 우선, 늦은 공격)
 }
 
 interface BuildTask {
@@ -52,6 +62,14 @@ export class AIController {
   
   // 난이도별 공격 유닛 수 최소값
   private minAttackUnits: number = 6;
+  
+  // 전략 시스템
+  private currentStrategy: AIStrategy = AIStrategy.TIMING;
+  private strategyChangeTick: number = 0;
+  private strategyDuration: number = 800; // 전략 유지 시간
+  private _harassSquad: number[] = []; // 기습 부대 ID (향후 귀환 로직용)
+  private lastHarassTick: number = 0;
+  private harassInterval: number = 400;
 
   constructor(
     gameState: GameState, 
@@ -74,21 +92,32 @@ export class AIController {
         this.attackInterval = 960; // ~1분마다 공격
         this.buildCheckInterval = 64; // 4초마다 건설 체크 (느림)
         this.gatherCheckInterval = 80; // 5초마다 채취 체크 (느림)
-        this.minAttackUnits = 4; // 더 적은 유닛으로 공격
+        this.minAttackUnits = 4;
+        this.currentStrategy = AIStrategy.TIMING; // Easy는 단순 타이밍
+        this.harassInterval = 800; // 기습 적게
         break;
       case AIDifficulty.NORMAL:
         this.attackInterval = 600; // ~37초마다 공격
         this.buildCheckInterval = 32; // 2초마다 건설 체크
         this.gatherCheckInterval = 48; // 3초마다 채취 체크
         this.minAttackUnits = 6;
+        this.currentStrategy = this.pickRandomStrategy();
+        this.harassInterval = 500;
         break;
       case AIDifficulty.HARD:
         this.attackInterval = 400; // ~25초마다 공격 (공격적)
         this.buildCheckInterval = 16; // 1초마다 건설 체크 (빠름)
         this.gatherCheckInterval = 32; // 2초마다 채취 체크 (빠름)
-        this.minAttackUnits = 8; // 더 많은 유닛으로 공격
+        this.minAttackUnits = 8;
+        this.currentStrategy = this.pickRandomStrategy();
+        this.harassInterval = 300; // 기습 자주
         break;
     }
+  }
+  
+  private pickRandomStrategy(): AIStrategy {
+    const strategies = [AIStrategy.RUSH, AIStrategy.TIMING, AIStrategy.HARASS, AIStrategy.CONTAIN, AIStrategy.MACRO];
+    return strategies[Math.floor(Math.random() * strategies.length)];
   }
 
   setPathfinding(pathfinding: PathfindingService): void {
@@ -100,13 +129,20 @@ export class AIController {
     const resources = this.gameState.getPlayerResources(this.playerId);
     if (!resources) return;
 
+    // 전략 변경 체크 (일정 시간마다 전략 재선택)
+    if (currentTick - this.strategyChangeTick > this.strategyDuration && this.difficulty !== AIDifficulty.EASY) {
+      this.currentStrategy = this.pickRandomStrategy();
+      this.strategyChangeTick = currentTick;
+      console.log(`AI switched to ${this.currentStrategy} strategy`);
+    }
+
     // 건설 작업 처리
     if (currentTick - this.lastBuildCheck > this.buildCheckInterval) {
       this.processBuildOrder(resources);
       this.lastBuildCheck = currentTick;
     }
     
-    // 유닛 생산
+    // 유닛 생산 (전략에 따라 다르게)
     this.executeProduction(resources);
     
     // 자원 채취 관리
@@ -115,14 +151,62 @@ export class AIController {
       this.lastGatherCheck = currentTick;
     }
 
-    // 공격 타이밍 체크
-    if (currentTick - this.lastAttackTick > this.attackInterval) {
-      const combatUnits = this.getCombatUnits();
-      if (combatUnits.length >= this.minAttackUnits) {
-        this.state = AIState.ATTACKING;
-        this.launchAttack();
-        this.lastAttackTick = currentTick;
-      }
+    // 전략별 공격 로직
+    this.executeStrategy(currentTick);
+  }
+  
+  private executeStrategy(currentTick: number): void {
+    const combatUnits = this.getCombatUnits();
+    
+    switch (this.currentStrategy) {
+      case AIStrategy.RUSH:
+        // 러시: 3유닛만 모이면 바로 공격
+        if (combatUnits.length >= 3 && currentTick - this.lastAttackTick > this.attackInterval * 0.5) {
+          this.state = AIState.ATTACKING;
+          this.launchAttack();
+          this.lastAttackTick = currentTick;
+        }
+        break;
+        
+      case AIStrategy.HARASS:
+        // 기습: 2유닛으로 자원라인 공격
+        if (currentTick - this.lastHarassTick > this.harassInterval && combatUnits.length >= 2) {
+          this.launchHarass();
+          this.lastHarassTick = currentTick;
+        }
+        // 메인 공격도 병행
+        if (combatUnits.length >= this.minAttackUnits && currentTick - this.lastAttackTick > this.attackInterval) {
+          this.launchAttack();
+          this.lastAttackTick = currentTick;
+        }
+        break;
+        
+      case AIStrategy.CONTAIN:
+        // 견제: 적 기지 앞에서 대기하며 압박
+        if (combatUnits.length >= 4 && currentTick - this.lastAttackTick > this.attackInterval * 0.7) {
+          this.launchContain();
+          this.lastAttackTick = currentTick;
+        }
+        break;
+        
+      case AIStrategy.MACRO:
+        // 매크로: 많은 유닛 모아서 한방
+        if (combatUnits.length >= this.minAttackUnits + 4 && currentTick - this.lastAttackTick > this.attackInterval * 1.5) {
+          this.state = AIState.ATTACKING;
+          this.launchAttack();
+          this.lastAttackTick = currentTick;
+        }
+        break;
+        
+      case AIStrategy.TIMING:
+      default:
+        // 기본 타이밍 공격
+        if (combatUnits.length >= this.minAttackUnits && currentTick - this.lastAttackTick > this.attackInterval) {
+          this.state = AIState.ATTACKING;
+          this.launchAttack();
+          this.lastAttackTick = currentTick;
+        }
+        break;
     }
   }
 
@@ -562,29 +646,133 @@ export class AIController {
 
     console.log(`AI launching attack with ${combatUnits.length} units!`);
 
-    // 모든 전투 유닛에게 공격 명령
-    for (const unit of combatUnits) {
+    // 모든 전투 유닛에게 공격 명령 (측면 공격 패턴)
+    const spreadAngle = Math.random() * Math.PI / 4 - Math.PI / 8; // -22.5° ~ +22.5°
+    for (let i = 0; i < combatUnits.length; i++) {
+      const unit = combatUnits[i];
       const movement = unit.getComponent<Movement>(Movement);
       const combat = unit.getComponent<Combat>(Combat);
 
+      if (movement && combat) {
+        // 각 유닛에 약간의 오프셋 (뭉치지 않게)
+        const offset = (i % 5) * 20 - 40;
+        const angle = spreadAngle + (i % 3) * 0.2;
+        const offsetX = Math.cos(angle) * offset;
+        const offsetY = Math.sin(angle) * offset;
+        
+        combat.startAttackMove(targetPos.x + offsetX, targetPos.y + offsetY);
+        movement.setTarget(targetPos.x + offsetX, targetPos.y + offsetY);
+      }
+    }
+  }
+  
+  // 기습 공격 (자원라인 타겟)
+  private launchHarass(): void {
+    const combatUnits = this.getCombatUnits();
+    if (combatUnits.length < 2) return;
+    
+    // 빠른 유닛 2개 선택 (Vulture > Marine)
+    const fastUnits = combatUnits
+      .filter(u => {
+        const unit = u.getComponent<Unit>(Unit);
+        return unit && (unit.unitType === UnitType.VULTURE || unit.unitType === UnitType.MARINE);
+      })
+      .slice(0, 2);
+    
+    if (fastUnits.length < 2) return;
+    
+    // 적 일꾼 찾기
+    const enemyWorkers = this.getEnemyEntities().filter(e => {
+      const unit = e.getComponent<Unit>(Unit);
+      return unit?.unitType === UnitType.SCV;
+    });
+    
+    if (enemyWorkers.length === 0) return;
+    
+    // 랜덤 일꾼 선택
+    const target = enemyWorkers[Math.floor(Math.random() * enemyWorkers.length)];
+    const targetPos = target.getComponent<Position>(Position);
+    if (!targetPos) return;
+    
+    console.log(`AI harassing with ${fastUnits.length} units!`);
+    this._harassSquad = fastUnits.map(u => u.id);
+    
+    for (const unit of fastUnits) {
+      const movement = unit.getComponent<Movement>(Movement);
+      const combat = unit.getComponent<Combat>(Combat);
       if (movement && combat) {
         combat.startAttackMove(targetPos.x, targetPos.y);
         movement.setTarget(targetPos.x, targetPos.y);
       }
     }
+    this.state = AIState.HARASSING;
+  }
+  
+  // 견제 (적 확장 방해)
+  private launchContain(): void {
+    const combatUnits = this.getCombatUnits();
+    const enemyBuildings = this.getEnemyEntities().filter(e => e.getComponent<Building>(Building));
+    
+    if (enemyBuildings.length === 0) return;
+    
+    // 적 커맨드센터 위치 찾기
+    const enemyCC = enemyBuildings.find(b => 
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+    );
+    
+    if (!enemyCC) return;
+    
+    const ccPos = enemyCC.getComponent<Position>(Position);
+    if (!ccPos) return;
+    
+    // 커맨드센터 앞에 라인 형성 (입구 막기)
+    console.log(`AI containing enemy base with ${combatUnits.length} units!`);
+    
+    // 내 베이스와 적 베이스 중간 지점
+    const myCC = this.getMyBuildings().find(b => 
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+    );
+    const myPos = myCC?.getComponent<Position>(Position);
+    
+    const containX = myPos ? (ccPos.x + myPos.x) / 2 : ccPos.x - 200;
+    const containY = myPos ? (ccPos.y + myPos.y) / 2 : ccPos.y;
+    
+    for (let i = 0; i < combatUnits.length; i++) {
+      const unit = combatUnits[i];
+      const movement = unit.getComponent<Movement>(Movement);
+      const combat = unit.getComponent<Combat>(Combat);
+      
+      if (movement && combat) {
+        // 라인 형성
+        const lineOffset = (i - combatUnits.length / 2) * 30;
+        combat.startAttackMove(containX + lineOffset, containY);
+        movement.setTarget(containX + lineOffset, containY);
+      }
+    }
+    
+    this.state = AIState.ATTACKING;
   }
   
   private findPriorityTarget(enemies: Entity[]): Entity | null {
-    // 우선순위: 건물 > 유닛
+    // 우선순위: 생산건물 > 일반건물 > 유닛
     const buildings = enemies.filter(e => e.getComponent<Building>(Building));
     const units = enemies.filter(e => e.getComponent<Unit>(Unit));
     
-    // 건물 중 가장 가까운 것
-    if (buildings.length > 0) {
-      return buildings[0];
+    // 생산 가능 건물 우선 (배럭, 팩토리)
+    const productionBuildings = buildings.filter(b => {
+      const building = b.getComponent<Building>(Building);
+      return building && [BuildingType.BARRACKS, BuildingType.FACTORY, BuildingType.COMMAND_CENTER].includes(building.buildingType);
+    });
+    
+    if (productionBuildings.length > 0) {
+      return productionBuildings[Math.floor(Math.random() * productionBuildings.length)];
     }
     
-    return units[0] || null;
+    if (buildings.length > 0) {
+      return buildings[Math.floor(Math.random() * buildings.length)];
+    }
+    
+    return units.length > 0 ? units[Math.floor(Math.random() * units.length)] : null;
   }
   
   private getCombatUnits(): Entity[] {
@@ -623,5 +811,13 @@ export class AIController {
 
   getState(): AIState {
     return this.state;
+  }
+  
+  getStrategy(): AIStrategy {
+    return this.currentStrategy;
+  }
+  
+  getHarassSquad(): number[] {
+    return this._harassSquad;
   }
 }

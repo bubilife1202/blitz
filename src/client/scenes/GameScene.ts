@@ -147,6 +147,9 @@ export class GameScene extends Phaser.Scene {
     
     // 입력 매니저 초기화
     this.selectionManager = new SelectionManager(this, this.gameState, 1);
+    this.selectionManager.onHoverChange = (entityId) => {
+      this.unitRenderer.setHoveredEntity(entityId);
+    };
     this.commandManager = new CommandManager(
       this,
       this.gameState,

@@ -22,11 +22,15 @@ export class SelectionManager {
   private selectionStart: { x: number; y: number } | null = null;
   private selectedEntities: Set<EntityId> = new Set();
   
+  // 호버 상태
+  private hoveredEntityId: EntityId | null = null;
+  
   // 명령 모드 플래그 (A-move 등 명령 실행 중 선택 해제 방지)
   private isCommandMode: boolean = false;
 
   // 콜백
   public onSelectionChange?: (selectedIds: EntityId[]) => void;
+  public onHoverChange?: (entityId: EntityId | null) => void;
 
   constructor(scene: Phaser.Scene, gameState: GameState, localPlayerId: PlayerId = 1) {
     this.scene = scene;
@@ -44,10 +48,13 @@ export class SelectionManager {
       }
     });
 
-    // 드래그 중
+    // 드래그 중 + 호버 검출
     this.scene.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (pointer.leftButtonDown() && this.selectionStart) {
         this.updateSelectionBox(pointer.worldX, pointer.worldY);
+      } else if (!pointer.leftButtonDown()) {
+        // 호버 검출
+        this.updateHover(pointer.worldX, pointer.worldY);
       }
     });
 
@@ -294,5 +301,37 @@ export class SelectionManager {
   // 명령 모드 확인
   isInCommandMode(): boolean {
     return this.isCommandMode;
+  }
+  
+  // 호버 업데이트
+  private updateHover(x: number, y: number): void {
+    const entities = this.gameState.getAllEntities();
+    let closestEntity: Entity | null = null;
+    let closestDist = Infinity;
+    
+    for (const entity of entities) {
+      const position = entity.getComponent<Position>(Position);
+      const selectable = entity.getComponent<Selectable>(Selectable);
+      
+      if (!position || !selectable || entity.isDestroyed()) continue;
+      
+      const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
+      
+      if (dist < selectable.selectionRadius + 10 && dist < closestDist) {
+        closestDist = dist;
+        closestEntity = entity;
+      }
+    }
+    
+    const newHoveredId = closestEntity?.id ?? null;
+    if (newHoveredId !== this.hoveredEntityId) {
+      this.hoveredEntityId = newHoveredId;
+      this.onHoverChange?.(newHoveredId);
+    }
+  }
+  
+  // 호버된 엔티티 ID
+  getHoveredEntityId(): EntityId | null {
+    return this.hoveredEntityId;
   }
 }

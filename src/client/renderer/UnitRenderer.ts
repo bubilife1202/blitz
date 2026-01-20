@@ -48,15 +48,23 @@ export class UnitRenderer {
   private visuals: Map<number, UnitVisual> = new Map();
   private localPlayerId: PlayerId;
   private visionSystem?: VisionSystem;
+  private hoveredEntityId: number | null = null;
+  private hoverGraphics: Phaser.GameObjects.Graphics | null = null;
 
   constructor(scene: Phaser.Scene, localPlayerId: PlayerId = 1, visionSystem?: VisionSystem) {
     this.scene = scene;
     this.localPlayerId = localPlayerId;
     this.visionSystem = visionSystem;
+    this.hoverGraphics = this.scene.add.graphics();
+    this.hoverGraphics.setDepth(95); // 유닛 아래, 선택 위
   }
 
   setVisionSystem(visionSystem: VisionSystem): void {
     this.visionSystem = visionSystem;
+  }
+  
+  setHoveredEntity(entityId: number | null): void {
+    this.hoveredEntityId = entityId;
   }
 
   updateEntities(entities: Entity[]): void {
@@ -102,6 +110,48 @@ export class UnitRenderer {
         this.destroyVisual(visual);
         this.visuals.delete(id);
       }
+    }
+    
+    // 호버 인디케이터 업데이트
+    this.updateHoverIndicator(entities);
+  }
+  
+  private updateHoverIndicator(entities: Entity[]): void {
+    if (!this.hoverGraphics) return;
+    this.hoverGraphics.clear();
+    
+    if (this.hoveredEntityId === null) return;
+    
+    const entity = entities.find(e => e.id === this.hoveredEntityId);
+    if (!entity) return;
+    
+    const position = entity.getComponent<Position>(Position);
+    const unit = entity.getComponent<Unit>(Unit);
+    const owner = entity.getComponent<Owner>(Owner);
+    
+    if (!position || !unit) return;
+    
+    const unitConfig = UNIT_VISUALS[unit.unitType] || { shape: 'circle', size: 10 };
+    const radius = unitConfig.size + 6;
+    
+    // 호버 링 (점선 효과 - 시간 기반 회전)
+    const time = this.scene.time.now / 500;
+    const segments = 16;
+    const dashRatio = 0.6;
+    
+    // 적/아군 색상 구분
+    const isEnemy = owner && owner.playerId !== this.localPlayerId;
+    const hoverColor = isEnemy ? 0xff4444 : 0x44ff44;
+    
+    this.hoverGraphics.lineStyle(2, hoverColor, 0.8);
+    
+    for (let i = 0; i < segments; i++) {
+      const startAngle = (i / segments) * Math.PI * 2 + time;
+      const endAngle = startAngle + (Math.PI * 2 / segments) * dashRatio;
+      
+      this.hoverGraphics.beginPath();
+      this.hoverGraphics.arc(position.x, position.y, radius, startAngle, endAngle, false);
+      this.hoverGraphics.strokePath();
     }
   }
 

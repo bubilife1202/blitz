@@ -76,33 +76,60 @@ export class HUD {
   private createResourcePanel(width: number): void {
     this.resourcePanel = this.scene.add.container(0, 0);
 
-    // 배경
-    const bg = this.scene.add.rectangle(width / 2, 20, width, 40, 0x000000, 0.8);
-    this.resourcePanel.add(bg);
+    // 베벨 배경 (3D 효과)
+    const bgHeight = 36;
+    const bg = this.scene.add.rectangle(width / 2, bgHeight / 2, width, bgHeight, 0x1a1a2e, 0.95);
+    const topEdge = this.scene.add.rectangle(width / 2, 1, width, 2, 0x3a3a5e);
+    const bottomEdge = this.scene.add.rectangle(width / 2, bgHeight - 1, width, 2, 0x0a0a1a);
+    this.resourcePanel.add([bg, topEdge, bottomEdge]);
 
-    // 미네랄
-    const mineralIcon = this.scene.add.rectangle(100, 20, 20, 20, 0x00ffff);
-    this.mineralText = this.scene.add.text(130, 10, '50', {
-      fontSize: '18px',
+    // 미네랄 (다이아몬드 아이콘)
+    const mineralGfx = this.scene.add.graphics();
+    mineralGfx.fillStyle(0x00ffff, 1);
+    mineralGfx.fillTriangle(100, 10, 90, 20, 100, 30); // 왼쪽
+    mineralGfx.fillStyle(0x00cccc, 1);
+    mineralGfx.fillTriangle(100, 10, 110, 20, 100, 30); // 오른쪽
+    mineralGfx.fillStyle(0x00eeee, 1);
+    mineralGfx.fillTriangle(100, 10, 95, 20, 105, 20); // 상단
+    this.mineralText = this.scene.add.text(125, 11, '50', {
+      fontSize: '16px',
       color: '#00ffff',
+      fontStyle: 'bold',
+      shadow: { offsetX: 1, offsetY: 1, color: '#003333', blur: 2, fill: true }
     });
-    this.resourcePanel.add([mineralIcon, this.mineralText]);
+    this.resourcePanel.add([mineralGfx, this.mineralText]);
 
-    // 가스
-    const gasIcon = this.scene.add.rectangle(250, 20, 20, 20, 0x00ff00);
-    this.gasText = this.scene.add.text(280, 10, '0', {
-      fontSize: '18px',
+    // 가스 (원형 + 연기 효과)
+    const gasGfx = this.scene.add.graphics();
+    gasGfx.fillStyle(0x00aa00, 1);
+    gasGfx.fillCircle(250, 18, 10);
+    gasGfx.fillStyle(0x00ff00, 0.6);
+    gasGfx.fillCircle(250, 18, 6);
+    gasGfx.fillStyle(0x88ff88, 0.4);
+    gasGfx.fillCircle(248, 15, 3);
+    this.gasText = this.scene.add.text(270, 11, '0', {
+      fontSize: '16px',
       color: '#00ff00',
+      fontStyle: 'bold',
+      shadow: { offsetX: 1, offsetY: 1, color: '#003300', blur: 2, fill: true }
     });
-    this.resourcePanel.add([gasIcon, this.gasText]);
+    this.resourcePanel.add([gasGfx, this.gasText]);
 
-    // 서플라이
-    const supplyIcon = this.scene.add.rectangle(400, 20, 20, 20, 0xffff00);
-    this.supplyText = this.scene.add.text(430, 10, '0/10', {
-      fontSize: '18px',
-      color: '#ffff00',
+    // 서플라이 (사람 아이콘)
+    const supplyGfx = this.scene.add.graphics();
+    supplyGfx.fillStyle(0xffcc00, 1);
+    supplyGfx.fillCircle(400, 12, 5); // 머리
+    supplyGfx.fillRect(397, 17, 6, 10); // 몸통
+    supplyGfx.fillStyle(0xffaa00, 1);
+    supplyGfx.fillRect(393, 19, 4, 6); // 왼팔
+    supplyGfx.fillRect(403, 19, 4, 6); // 오른팔
+    this.supplyText = this.scene.add.text(420, 11, '0/10', {
+      fontSize: '16px',
+      color: '#ffcc00',
+      fontStyle: 'bold',
+      shadow: { offsetX: 1, offsetY: 1, color: '#333300', blur: 2, fill: true }
     });
-    this.resourcePanel.add([supplyIcon, this.supplyText]);
+    this.resourcePanel.add([supplyGfx, this.supplyText]);
 
     this.container.add(this.resourcePanel);
   }
@@ -111,17 +138,37 @@ export class HUD {
     // 미니맵(200x200) 오른쪽에 배치
     this.selectionPanel = this.scene.add.container(220, height - 150);
 
-    // 배경
-    const bg = this.scene.add.rectangle(0, 0, 280, 140, 0x000000, 0.8);
+    const w = 280, h = 140;
+    
+    // 베벨 프레임 배경
+    const bg = this.scene.add.rectangle(0, 0, w, h, 0x0d1117, 0.95);
     bg.setOrigin(0, 0);
-    bg.setStrokeStyle(2, 0x444444);
-    this.selectionPanel.add(bg);
+    
+    // 3D 베벨 효과 (밝은 상단/좌측, 어두운 하단/우측)
+    const bevelGfx = this.scene.add.graphics();
+    bevelGfx.lineStyle(2, 0x3a4a5a); // 밝은 테두리
+    bevelGfx.moveTo(0, h);
+    bevelGfx.lineTo(0, 0);
+    bevelGfx.lineTo(w, 0);
+    bevelGfx.strokePath();
+    bevelGfx.lineStyle(2, 0x0a0a0f); // 어두운 테두리
+    bevelGfx.moveTo(w, 0);
+    bevelGfx.lineTo(w, h);
+    bevelGfx.lineTo(0, h);
+    bevelGfx.strokePath();
+    
+    // 내부 테두리
+    bevelGfx.lineStyle(1, 0x2a3a4a);
+    bevelGfx.strokeRect(4, 4, w - 8, h - 8);
+    
+    this.selectionPanel.add([bg, bevelGfx]);
 
     // 선택 정보
     this.selectionInfo = this.scene.add.text(10, 10, 'No selection', {
       fontSize: '14px',
-      color: '#ffffff',
+      color: '#c0c0c0',
       wordWrap: { width: 260 },
+      shadow: { offsetX: 1, offsetY: 1, color: '#000000', blur: 1, fill: true }
     });
     this.selectionPanel.add(this.selectionInfo);
 
@@ -131,11 +178,30 @@ export class HUD {
   private createCommandPanel(width: number, height: number): void {
     this.commandPanel = this.scene.add.container(width - 250, height - 150);
 
-    // 배경 (더 넓게)
-    const bg = this.scene.add.rectangle(0, 0, 240, 140, 0x000000, 0.8);
+    const w = 240, h = 140;
+    
+    // 베벨 프레임 배경
+    const bg = this.scene.add.rectangle(0, 0, w, h, 0x0d1117, 0.95);
     bg.setOrigin(0, 0);
-    bg.setStrokeStyle(2, 0x444444);
-    this.commandPanel.add(bg);
+    
+    // 3D 베벨 효과
+    const bevelGfx = this.scene.add.graphics();
+    bevelGfx.lineStyle(2, 0x3a4a5a);
+    bevelGfx.moveTo(0, h);
+    bevelGfx.lineTo(0, 0);
+    bevelGfx.lineTo(w, 0);
+    bevelGfx.strokePath();
+    bevelGfx.lineStyle(2, 0x0a0a0f);
+    bevelGfx.moveTo(w, 0);
+    bevelGfx.lineTo(w, h);
+    bevelGfx.lineTo(0, h);
+    bevelGfx.strokePath();
+    
+    // 내부 테두리
+    bevelGfx.lineStyle(1, 0x2a3a4a);
+    bevelGfx.strokeRect(4, 4, w - 8, h - 8);
+    
+    this.commandPanel.add([bg, bevelGfx]);
 
     this.container.add(this.commandPanel);
   }
