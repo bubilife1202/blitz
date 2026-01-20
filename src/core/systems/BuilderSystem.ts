@@ -14,6 +14,8 @@ import { Selectable } from '../components/Selectable';
 import { ProductionQueue } from '../components/ProductionQueue';
 import { ResearchQueue } from '../components/ResearchQueue';
 import { Gatherer } from '../components/Gatherer';
+import { Resource } from '../components/Resource';
+import { BuildingType, ResourceType } from '@shared/types';
 import { BUILDING_STATS } from '@shared/constants';
 
 export class BuilderSystem extends System {
@@ -21,6 +23,27 @@ export class BuilderSystem extends System {
   readonly priority = 20; // Before ConstructionSystem
 
   private pathfindingService: import('../PathfindingService').PathfindingService | null = null;
+
+  private findNearestGasGeyser(x: number, y: number, gameState: GameState): Entity | null {
+    let nearest: Entity | null = null;
+    let nearestDist = Infinity;
+
+    for (const entity of gameState.getAllEntities()) {
+      const resource = entity.getComponent<Resource>(Resource);
+      const pos = entity.getComponent<Position>(Position);
+      if (!resource || !pos) continue;
+      if (resource.resourceType !== ResourceType.GAS) continue;
+      if (resource.isDepleted()) continue;
+
+      const dist = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = entity;
+      }
+    }
+
+    return nearest;
+  }
 
   // 패스파인딩 서비스 연결
   setPathfindingService(service: import('../PathfindingService').PathfindingService): void {
@@ -91,6 +114,14 @@ export class BuilderSystem extends System {
     const buildingEntity = gameState.createEntity();
     const building = new Building(buildingType, false); // isConstructing = true
     building.builderId = scvEntity.id;
+
+    // Refinery는 가장 가까운 가스 간헐천과 연결
+    if (buildingType === BuildingType.REFINERY) {
+      const geyser = this.findNearestGasGeyser(x, y, gameState);
+      if (geyser) {
+        building.linkedGeyserId = geyser.id;
+      }
+    }
 
     buildingEntity
       .addComponent(new Position(x, y))
