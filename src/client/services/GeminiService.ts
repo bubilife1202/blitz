@@ -40,16 +40,21 @@ export class GeminiService {
         body: JSON.stringify({ prompt, systemInstruction })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('AI 서비스 연결 실패 (API Key 설정을 확인하세요)');
+        const errorMsg = data.error || 'Unknown Server Error';
+        throw new Error(`AI 서비스 응답 에러: ${errorMsg} (Netlify 환경변수 GEMINI_API_KEY와 배포 상태를 확인하세요)`);
       }
 
-      const data = await response.json();
-      const textResponse = data.candidates[0].content.parts[0].text;
+      const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!textResponse) {
+        throw new Error('AI가 응답을 생성하지 못했습니다.');
+      }
       
       const jsonMatch = textResponse.match(/\[.*\]/s);
       return jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-    } catch (error) {
+    } catch (error: any) {
       console.error('Gemini Service Error:', error);
       throw error;
     }

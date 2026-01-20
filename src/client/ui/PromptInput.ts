@@ -73,38 +73,38 @@ export class PromptInput {
     this.background = this.scene.add.rectangle(
       width / 2,
       height - 100,
-      600,
+      640,
       180,
       0x000000,
-      0.7
+      0.85
     );
-    this.background.setStrokeStyle(2, 0x00ff00);
+    this.background.setStrokeStyle(3, 0x00ff00); // 테두리 두껍게
     this.container.add(this.background);
 
     // 도움말 텍스트
     const helpText = this.scene.add.text(
-      width / 2 - 280,
+      width / 2 - 300,
       height - 175,
-      'Commands: select [unit/building], move [x] [y], attack, build [type], train [unit], stop, help',
-      { fontSize: '10px', color: '#888888' }
+      'AI Commander: Type naturally (e.g. "Send all marines to attack 50 50")',
+      { fontSize: '11px', color: '#00ff00', fontStyle: 'bold' }
     );
     this.container.add(helpText);
 
     // 출력 텍스트
     this.outputText = this.scene.add.text(
-      width / 2 - 280,
-      height - 155,
-      '> Ready. Type "help" for commands.',
-      { fontSize: '12px', color: '#00ff00', wordWrap: { width: 560 } }
+      width / 2 - 300,
+      height - 150,
+      '> Waiting for command...',
+      { fontSize: '13px', color: '#ffffff', wordWrap: { width: 600 } }
     );
     this.container.add(this.outputText);
 
     // 히스토리 텍스트
     this.historyText = this.scene.add.text(
-      width / 2 - 280,
-      height - 130,
+      width / 2 - 300,
+      height - 120,
       '',
-      { fontSize: '11px', color: '#666666', wordWrap: { width: 560 } }
+      { fontSize: '11px', color: '#888888', wordWrap: { width: 600 } }
     );
     this.container.add(this.historyText);
 
