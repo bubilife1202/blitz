@@ -144,6 +144,9 @@ export class PromptInput {
     `;
 
     this.inputElement.addEventListener('keydown', (e) => {
+      // Phaser가 키 입력을 가로채지 않도록 전파 중지
+      e.stopPropagation();
+      
       if (e.key === 'Enter') {
         this.executeCommand(this.inputElement.value);
         this.inputElement.value = '';
