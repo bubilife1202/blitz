@@ -3,7 +3,7 @@
 // ==========================================
 
 import Phaser from 'phaser';
-import { DirectorStance, type DirectorSettings, type PlanSnapshot } from '@core/PlayerDirector';
+import { DirectorStance, type DirectorSettings, type PlanSnapshot, type Strategy } from '@core/PlayerDirector';
 
 export class DirectorPanel {
   private scene: Phaser.Scene;
@@ -12,21 +12,30 @@ export class DirectorPanel {
   // UI 요소
   private enableToggle!: Phaser.GameObjects.Rectangle;
   private enableText!: Phaser.GameObjects.Text;
-  private stanceButtons: Map<DirectorStance, Phaser.GameObjects.Rectangle> = new Map();
-  private stanceTexts: Map<DirectorStance, Phaser.GameObjects.Text> = new Map();
+  private strategyContainer!: Phaser.GameObjects.Container;
+  private currentStrategyText!: Phaser.GameObjects.Text;
   private statsText!: Phaser.GameObjects.Text;
+  
+  // 드롭다운 상태
+  private isDropdownOpen = false;
+  private dropdownItems: Phaser.GameObjects.Container[] = [];
   
   // 상태
   private currentSettings: DirectorSettings = {
     enabled: false,
     stance: DirectorStance.BALANCED,
+    strategyId: 'balanced',
     autoWorkers: true,
     autoProduction: true,
     autoSupply: true,
   };
+  private availableStrategies: Strategy[] = [];
+  private selectedStrategy: Strategy | null = null;
   
   // 콜백
   public onSettingsChange?: (settings: Partial<DirectorSettings>) => void;
+  public onStrategySelect?: (strategyId: string) => void;
+  public onEditStrategy?: () => void;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -36,13 +45,13 @@ export class DirectorPanel {
   private createUI(): void {
     const height = this.scene.scale.height;
     
-    // 미니맵 위에 배치 (미니맵은 좌하단 0, height-200)
-    this.container = this.scene.add.container(10, height - 360);
+    // 미니맵 위에 배치
+    this.container = this.scene.add.container(10, height - 400);
     this.container.setScrollFactor(0);
     this.container.setDepth(3100);
     
     const panelW = 180;
-    const panelH = 150;
+    const panelH = 190;
     
     // 배경
     const bg = this.scene.add.rectangle(0, 0, panelW, panelH, 0x0a1628, 0.95);
@@ -62,11 +71,14 @@ export class DirectorPanel {
     // On/Off 토글
     this.createEnableToggle(10, 30);
     
-    // 전략 선택 버튼
-    this.createStanceButtons(10, 60);
+    // 전략 선택 드롭다운
+    this.createStrategyDropdown(10, 62);
+    
+    // 편집 버튼
+    this.createEditButton(140, 62);
     
     // 통계
-    this.statsText = this.scene.add.text(10, 120, '', {
+    this.statsText = this.scene.add.text(10, 160, '', {
       fontSize: '10px',
       color: '#888888',
     });
@@ -106,61 +118,187 @@ export class DirectorPanel {
     this.container.add([this.enableToggle, this.enableText]);
   }
 
-  private createStanceButtons(x: number, startY: number): void {
-    const stances: Array<{ stance: DirectorStance; label: string; color: number }> = [
-      { stance: DirectorStance.AGGRESSIVE, label: '공격적', color: 0xff4444 },
-      { stance: DirectorStance.BALANCED, label: '균형', color: 0x44aaff },
-      { stance: DirectorStance.DEFENSIVE, label: '방어적', color: 0x44ff44 },
-    ];
+  private createStrategyDropdown(x: number, y: number): void {
+    const w = 120;
+    const h = 26;
     
-    const buttonW = 50;
-    const buttonH = 22;
-    const gap = 5;
+    this.strategyContainer = this.scene.add.container(x, y);
+    this.container.add(this.strategyContainer);
     
-    stances.forEach((s, i) => {
-      const bx = x + i * (buttonW + gap);
-      const by = startY;
-      
-      const btn = this.scene.add.rectangle(bx, by, buttonW, buttonH, 0x222222);
-      btn.setOrigin(0, 0);
-      btn.setStrokeStyle(1, 0x444444);
-      btn.setInteractive({ useHandCursor: true });
-      
-      const text = this.scene.add.text(bx + buttonW / 2, by + buttonH / 2, s.label, {
-        fontSize: '10px',
-        color: '#666666',
-      });
-      text.setOrigin(0.5);
-      
-      btn.on('pointerdown', () => {
-        if (!this.currentSettings.enabled) return;
-        this.setStance(s.stance);
-        this.onSettingsChange?.({ stance: s.stance });
-      });
-      
-      btn.on('pointerover', () => {
-        if (this.currentSettings.enabled) {
-          btn.setStrokeStyle(2, s.color);
-        }
-      });
-      
-      btn.on('pointerout', () => {
-        if (this.currentSettings.stance !== s.stance) {
-          btn.setStrokeStyle(1, 0x444444);
-        }
-      });
-      
-      this.stanceButtons.set(s.stance, btn);
-      this.stanceTexts.set(s.stance, text);
-      this.container.add([btn, text]);
+    // 드롭다운 버튼 배경
+    const dropdownBg = this.scene.add.rectangle(0, 0, w, h, 0x1a2a3a);
+    dropdownBg.setOrigin(0, 0);
+    dropdownBg.setStrokeStyle(1, 0x3a5a7a);
+    dropdownBg.setInteractive({ useHandCursor: true });
+    this.strategyContainer.add(dropdownBg);
+    
+    // 현재 전략 이름
+    this.currentStrategyText = this.scene.add.text(8, h / 2, '균형', {
+      fontSize: '11px',
+      color: '#ffffff',
+    });
+    this.currentStrategyText.setOrigin(0, 0.5);
+    this.strategyContainer.add(this.currentStrategyText);
+    
+    // 화살표
+    const arrow = this.scene.add.text(w - 16, h / 2, '▼', {
+      fontSize: '10px',
+      color: '#888888',
+    });
+    arrow.setOrigin(0.5);
+    this.strategyContainer.add(arrow);
+    
+    // 클릭 이벤트
+    dropdownBg.on('pointerdown', () => {
+      if (!this.currentSettings.enabled) return;
+      this.toggleDropdown();
+    });
+    
+    dropdownBg.on('pointerover', () => {
+      if (this.currentSettings.enabled) {
+        dropdownBg.setStrokeStyle(2, 0x4a9eff);
+      }
+    });
+    
+    dropdownBg.on('pointerout', () => {
+      dropdownBg.setStrokeStyle(1, 0x3a5a7a);
     });
     
     // 라벨
-    const label = this.scene.add.text(x, startY + buttonH + 4, '전략 선택', {
+    const label = this.scene.add.text(x, y + h + 4, '전략 선택', {
       fontSize: '9px',
       color: '#555555',
     });
     this.container.add(label);
+    
+    // 전략 설명
+    const descLabel = this.scene.add.text(x, y + h + 20, '', {
+      fontSize: '9px',
+      color: '#666666',
+      wordWrap: { width: 160 },
+    });
+    descLabel.setName('strategyDesc');
+    this.container.add(descLabel);
+  }
+
+  private createEditButton(x: number, y: number): void {
+    const size = 26;
+    
+    const btn = this.scene.add.rectangle(x, y, size, size, 0x2a3a4a);
+    btn.setOrigin(0, 0);
+    btn.setStrokeStyle(1, 0x4a5a6a);
+    btn.setInteractive({ useHandCursor: true });
+    
+    const icon = this.scene.add.text(x + size / 2, y + size / 2, '⚙', {
+      fontSize: '14px',
+      color: '#888888',
+    });
+    icon.setOrigin(0.5);
+    
+    btn.on('pointerdown', () => {
+      if (!this.currentSettings.enabled) return;
+      this.closeDropdown();
+      this.onEditStrategy?.();
+    });
+    
+    btn.on('pointerover', () => {
+      if (this.currentSettings.enabled) {
+        btn.setStrokeStyle(2, 0x4a9eff);
+        icon.setColor('#ffffff');
+      }
+    });
+    
+    btn.on('pointerout', () => {
+      btn.setStrokeStyle(1, 0x4a5a6a);
+      icon.setColor('#888888');
+    });
+    
+    this.container.add([btn, icon]);
+  }
+
+  private toggleDropdown(): void {
+    if (this.isDropdownOpen) {
+      this.closeDropdown();
+    } else {
+      this.openDropdown();
+    }
+  }
+
+  private openDropdown(): void {
+    if (this.availableStrategies.length === 0) return;
+    
+    this.isDropdownOpen = true;
+    const itemH = 28;
+    const w = 120;
+    
+    // 드롭다운 아이템들 생성
+    this.availableStrategies.forEach((strategy, i) => {
+      const itemY = 26 + i * itemH;
+      
+      const itemContainer = this.scene.add.container(0, itemY);
+      
+      const itemBg = this.scene.add.rectangle(0, 0, w, itemH, 0x1a2a3a);
+      itemBg.setOrigin(0, 0);
+      itemBg.setStrokeStyle(1, 0x2a3a4a);
+      itemBg.setInteractive({ useHandCursor: true });
+      itemContainer.add(itemBg);
+      
+      const isSelected = strategy.id === this.selectedStrategy?.id;
+      const itemText = this.scene.add.text(8, itemH / 2, strategy.name, {
+        fontSize: '10px',
+        color: isSelected ? '#4a9eff' : '#cccccc',
+      });
+      itemText.setOrigin(0, 0.5);
+      itemContainer.add(itemText);
+      
+      // 커스텀 표시
+      if (strategy.isCustom) {
+        const customBadge = this.scene.add.text(w - 8, itemH / 2, '★', {
+          fontSize: '10px',
+          color: '#ffaa00',
+        });
+        customBadge.setOrigin(1, 0.5);
+        itemContainer.add(customBadge);
+      }
+      
+      itemBg.on('pointerdown', () => {
+        this.selectStrategy(strategy);
+        this.closeDropdown();
+      });
+      
+      itemBg.on('pointerover', () => {
+        itemBg.setFillStyle(0x2a4a6a);
+      });
+      
+      itemBg.on('pointerout', () => {
+        itemBg.setFillStyle(0x1a2a3a);
+      });
+      
+      this.strategyContainer.add(itemContainer);
+      this.dropdownItems.push(itemContainer);
+    });
+  }
+
+  private closeDropdown(): void {
+    this.isDropdownOpen = false;
+    for (const item of this.dropdownItems) {
+      item.destroy();
+    }
+    this.dropdownItems = [];
+  }
+
+  private selectStrategy(strategy: Strategy): void {
+    this.selectedStrategy = strategy;
+    this.currentSettings.strategyId = strategy.id;
+    this.currentStrategyText.setText(strategy.name);
+    
+    // 설명 업데이트
+    const descLabel = this.container.getByName('strategyDesc') as Phaser.GameObjects.Text;
+    if (descLabel) {
+      descLabel.setText(strategy.description);
+    }
+    
+    this.onStrategySelect?.(strategy.id);
   }
 
   private setEnabled(enabled: boolean): void {
@@ -176,38 +314,7 @@ export class DirectorPanel {
       this.enableToggle.setStrokeStyle(1, 0x555555);
       this.enableText.setText('OFF');
       this.enableText.setColor('#888888');
-    }
-    
-    // 전략 버튼 상태 업데이트
-    this.updateStanceButtons();
-  }
-
-  private setStance(stance: DirectorStance): void {
-    this.currentSettings.stance = stance;
-    this.updateStanceButtons();
-  }
-
-  private updateStanceButtons(): void {
-    const colors: Record<DirectorStance, number> = {
-      [DirectorStance.AGGRESSIVE]: 0xff4444,
-      [DirectorStance.BALANCED]: 0x44aaff,
-      [DirectorStance.DEFENSIVE]: 0x44ff44,
-    };
-    
-    for (const [stance, btn] of this.stanceButtons) {
-      const text = this.stanceTexts.get(stance)!;
-      const isSelected = this.currentSettings.stance === stance;
-      const isEnabled = this.currentSettings.enabled;
-      
-      if (isSelected && isEnabled) {
-        btn.setFillStyle(colors[stance], 0.3);
-        btn.setStrokeStyle(2, colors[stance]);
-        text.setColor('#ffffff');
-      } else {
-        btn.setFillStyle(0x222222);
-        btn.setStrokeStyle(1, 0x444444);
-        text.setColor(isEnabled ? '#888888' : '#444444');
-      }
+      this.closeDropdown();
     }
   }
 
@@ -217,8 +324,19 @@ export class DirectorPanel {
     if (this.currentSettings.enabled !== snapshot.enabled) {
       this.setEnabled(snapshot.enabled);
     }
-    if (this.currentSettings.stance !== snapshot.stance) {
-      this.setStance(snapshot.stance);
+    
+    // 전략 목록 업데이트
+    this.availableStrategies = snapshot.availableStrategies;
+    
+    // 현재 전략 업데이트
+    if (snapshot.currentStrategy && snapshot.currentStrategy.id !== this.selectedStrategy?.id) {
+      this.selectedStrategy = snapshot.currentStrategy;
+      this.currentStrategyText.setText(snapshot.currentStrategy.name);
+      
+      const descLabel = this.container.getByName('strategyDesc') as Phaser.GameObjects.Text;
+      if (descLabel) {
+        descLabel.setText(snapshot.currentStrategy.description);
+      }
     }
     
     // 통계 업데이트
@@ -232,6 +350,7 @@ export class DirectorPanel {
   }
 
   destroy(): void {
+    this.closeDropdown();
     this.container.destroy();
   }
 }

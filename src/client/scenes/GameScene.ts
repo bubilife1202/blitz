@@ -43,6 +43,7 @@ import { soundManager } from '../audio/SoundManager';
 import { PlayerDirector } from '@core/PlayerDirector';
 import { DirectorPanel } from '../ui/DirectorPanel';
 import { PlanFeed } from '../ui/PlanFeed';
+import { StrategyEditor } from '../ui/StrategyEditor';
 
 interface GameSceneData {
   mode: 'single' | 'multi';
@@ -84,6 +85,7 @@ export class GameScene extends Phaser.Scene {
   private playerDirector!: PlayerDirector;
   private directorPanel!: DirectorPanel;
   private planFeed!: PlanFeed;
+  private strategyEditor!: StrategyEditor;
   
   // 카메라 드래그
   private isDragging: boolean = false;
@@ -274,10 +276,30 @@ export class GameScene extends Phaser.Scene {
     this.directorPanel.onSettingsChange = (settings) => {
       this.playerDirector.setSettings(settings);
     };
+    this.directorPanel.onStrategySelect = (strategyId) => {
+      this.playerDirector.selectStrategy(strategyId);
+    };
+    this.directorPanel.onEditStrategy = () => {
+      const currentStrategy = this.playerDirector.getCurrentStrategy();
+      this.strategyEditor.show(currentStrategy);
+    };
     
     this.planFeed = new PlanFeed(this);
     this.planFeed.onApprovalResponse = (_requestId, optionId) => {
       this.playerDirector.respondToApproval(optionId);
+    };
+    
+    // 전략 편집기
+    this.strategyEditor = new StrategyEditor(this);
+    this.strategyEditor.onSave = (strategy, isNew) => {
+      if (isNew) {
+        this.playerDirector.addStrategy(strategy);
+      } else {
+        this.playerDirector.updateStrategy(strategy.id, strategy);
+      }
+    };
+    this.strategyEditor.onDelete = (strategyId) => {
+      this.playerDirector.deleteStrategy(strategyId);
     };
     
     // 전투 이벤트 구독 (이펙트 연동)

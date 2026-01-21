@@ -18,12 +18,177 @@ import { Resource } from './components/Resource';
 import { UnitType, BuildingType, ResourceType, type PlayerId } from '@shared/types';
 import { UNIT_STATS, BUILDING_STATS, canTrainUnit } from '@shared/constants';
 
-// 전략 성향
+// 전략 성향 (deprecated - Strategy로 대체)
 export enum DirectorStance {
   AGGRESSIVE = 'aggressive',  // 빠른 공격, 적은 유닛으로
   BALANCED = 'balanced',      // 균형 잡힌 운영
   DEFENSIVE = 'defensive',    // 방어 우선, 경제 확장
 }
+
+// ==========================================
+// 전략 시스템 (Strategy)
+// ==========================================
+
+// 유닛 자동생산 설정
+export interface UnitProductionConfig {
+  unitType: UnitType;
+  enabled: boolean;        // 자동생산 ON/OFF
+  targetCount: number;     // 목표 수 (0 = 무제한)
+  priority: number;        // 우선순위 (높을수록 먼저)
+}
+
+// 빌드 오더 아이템
+export interface BuildOrderItem {
+  buildingType: BuildingType;
+  triggerType: 'supply' | 'minerals' | 'time' | 'building';
+  triggerValue: number;    // 서플라이 N, 미네랄 N, 시간 N초, 건물 N개
+  triggerBuilding?: BuildingType; // building 트리거일 때 어떤 건물 후에
+  completed?: boolean;
+}
+
+// 전략 타입
+export interface Strategy {
+  id: string;
+  name: string;
+  description: string;
+  isCustom: boolean;
+  
+  // 유닛 자동생산 설정
+  unitProduction: UnitProductionConfig[];
+  
+  // 빌드 오더 (순서대로 실행)
+  buildOrder: BuildOrderItem[];
+  
+  // 파라미터
+  workerTarget: number;           // 목표 일꾼 수
+  attackThreshold: number;        // 공격 시작 유닛 수
+  expandMineralThreshold: number; // 확장 시작 미네랄
+  gasTimingWorkers: number;       // 가스 채취 시작 일꾼 수 (0 = 즉시)
+  
+  // 자동 행동 ON/OFF
+  autoSupply: boolean;            // 자동 서플라이 건설
+  autoExpand: boolean;            // 자동 확장 제안
+  autoAttack: boolean;            // 자동 공격 제안
+}
+
+// 기본 프리셋 전략들
+export const PRESET_STRATEGIES: Strategy[] = [
+  {
+    id: 'balanced',
+    name: '균형',
+    description: '안정적인 경제와 병력 균형',
+    isCustom: false,
+    unitProduction: [
+      { unitType: UnitType.SCV, enabled: true, targetCount: 12, priority: 10 },
+      { unitType: UnitType.MARINE, enabled: true, targetCount: 12, priority: 5 },
+      { unitType: UnitType.VULTURE, enabled: false, targetCount: 4, priority: 3 },
+      { unitType: UnitType.SIEGE_TANK, enabled: false, targetCount: 2, priority: 4 },
+      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 2 },
+      { unitType: UnitType.MEDIC, enabled: false, targetCount: 2, priority: 3 },
+      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 2 },
+    ],
+    buildOrder: [
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
+      { buildingType: BuildingType.REFINERY, triggerType: 'supply', triggerValue: 12 },
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 15 },
+    ],
+    workerTarget: 12,
+    attackThreshold: 6,
+    expandMineralThreshold: 400,
+    gasTimingWorkers: 10,
+    autoSupply: true,
+    autoExpand: true,
+    autoAttack: true,
+  },
+  {
+    id: 'marine_rush',
+    name: '마린 러시',
+    description: '빠른 배럭 2개로 마린 물량 공격',
+    isCustom: false,
+    unitProduction: [
+      { unitType: UnitType.SCV, enabled: true, targetCount: 10, priority: 8 },
+      { unitType: UnitType.MARINE, enabled: true, targetCount: 20, priority: 10 },
+      { unitType: UnitType.VULTURE, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.SIEGE_TANK, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.MEDIC, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 1 },
+    ],
+    buildOrder: [
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
+      { buildingType: BuildingType.BARRACKS, triggerType: 'minerals', triggerValue: 150 },
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 14 },
+    ],
+    workerTarget: 10,
+    attackThreshold: 4,
+    expandMineralThreshold: 600,
+    gasTimingWorkers: 0, // 가스 안함
+    autoSupply: true,
+    autoExpand: false,
+    autoAttack: true,
+  },
+  {
+    id: 'fast_factory',
+    name: '빠른 팩토리',
+    description: '빠르게 가스 → 팩토리 → 탱크/벌처',
+    isCustom: false,
+    unitProduction: [
+      { unitType: UnitType.SCV, enabled: true, targetCount: 14, priority: 10 },
+      { unitType: UnitType.MARINE, enabled: true, targetCount: 4, priority: 3 },
+      { unitType: UnitType.VULTURE, enabled: true, targetCount: 6, priority: 7 },
+      { unitType: UnitType.SIEGE_TANK, enabled: true, targetCount: 4, priority: 8 },
+      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.MEDIC, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 1 },
+    ],
+    buildOrder: [
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
+      { buildingType: BuildingType.REFINERY, triggerType: 'supply', triggerValue: 11 },
+      { buildingType: BuildingType.FACTORY, triggerType: 'minerals', triggerValue: 200 },
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 16 },
+    ],
+    workerTarget: 14,
+    attackThreshold: 8,
+    expandMineralThreshold: 400,
+    gasTimingWorkers: 8,
+    autoSupply: true,
+    autoExpand: true,
+    autoAttack: true,
+  },
+  {
+    id: 'safe_expand',
+    name: '안정 확장',
+    description: '경제 우선, 방어적 플레이 후 확장',
+    isCustom: false,
+    unitProduction: [
+      { unitType: UnitType.SCV, enabled: true, targetCount: 20, priority: 10 },
+      { unitType: UnitType.MARINE, enabled: true, targetCount: 8, priority: 5 },
+      { unitType: UnitType.VULTURE, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.SIEGE_TANK, enabled: true, targetCount: 2, priority: 6 },
+      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.MEDIC, enabled: true, targetCount: 2, priority: 4 },
+      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 1 },
+    ],
+    buildOrder: [
+      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
+      { buildingType: BuildingType.REFINERY, triggerType: 'supply', triggerValue: 12 },
+      { buildingType: BuildingType.BUNKER, triggerType: 'minerals', triggerValue: 100 },
+      { buildingType: BuildingType.COMMAND_CENTER, triggerType: 'minerals', triggerValue: 400 },
+      { buildingType: BuildingType.FACTORY, triggerType: 'minerals', triggerValue: 200 },
+    ],
+    workerTarget: 20,
+    attackThreshold: 12,
+    expandMineralThreshold: 300,
+    gasTimingWorkers: 10,
+    autoSupply: true,
+    autoExpand: true,
+    autoAttack: true,
+  },
+];
 
 // 계획 액션 타입
 export interface PlanAction {
@@ -53,7 +218,8 @@ export interface DirectorLog {
 // 설정
 export interface DirectorSettings {
   enabled: boolean;
-  stance: DirectorStance;
+  stance: DirectorStance; // deprecated, Strategy로 대체
+  strategyId: string;     // 현재 선택된 전략 ID
   autoWorkers: boolean;
   autoProduction: boolean;
   autoSupply: boolean;
@@ -63,6 +229,8 @@ export interface DirectorSettings {
 export interface PlanSnapshot {
   enabled: boolean;
   stance: DirectorStance;
+  currentStrategy: Strategy;
+  availableStrategies: Strategy[];
   nextActions: PlanAction[];
   approvalRequest: ApprovalRequest | null;
   recentLogs: DirectorLog[];
@@ -82,10 +250,15 @@ export class PlayerDirector {
   private settings: DirectorSettings = {
     enabled: false,
     stance: DirectorStance.BALANCED,
+    strategyId: 'balanced',
     autoWorkers: true,
     autoProduction: true,
     autoSupply: true,
   };
+  
+  // 전략 목록 (프리셋 + 커스텀)
+  private strategies: Strategy[] = [...PRESET_STRATEGIES];
+  private currentStrategy: Strategy = PRESET_STRATEGIES[0];
   
   // 계획 상태
   private nextActions: PlanAction[] = [];
@@ -101,8 +274,7 @@ export class PlayerDirector {
   private lastProductionCheck = 0;
   private productionCheckInterval = 24; // 1.5초
   
-  // 공격 준비 상태
-  private attackReadyThreshold = 6; // 이 수 이상이면 공격 제안
+  // 공격 제안 쿨다운
   private lastAttackSuggestionTick = 0;
   private attackSuggestionCooldown = 240; // 15초 (더 빠르게)
   
@@ -155,6 +327,81 @@ export class PlayerDirector {
 
   getSettings(): DirectorSettings {
     return { ...this.settings };
+  }
+
+  // 전략 선택
+  selectStrategy(strategyId: string): void {
+    const strategy = this.strategies.find(s => s.id === strategyId);
+    if (strategy) {
+      this.currentStrategy = strategy;
+      this.settings.strategyId = strategyId;
+      this.addLog(`전략 변경: ${strategy.name}`, 'info');
+      
+      // 빌드오더 초기화
+      for (const item of strategy.buildOrder) {
+        item.completed = false;
+      }
+    }
+  }
+
+  // 전략 추가 (커스텀)
+  addStrategy(strategy: Strategy): void {
+    strategy.isCustom = true;
+    strategy.id = `custom_${Date.now()}`;
+    this.strategies.push(strategy);
+    this.addLog(`전략 추가: ${strategy.name}`, 'info');
+  }
+
+  // 전략 수정
+  updateStrategy(strategyId: string, updates: Partial<Strategy>): void {
+    const index = this.strategies.findIndex(s => s.id === strategyId);
+    if (index >= 0) {
+      this.strategies[index] = { ...this.strategies[index], ...updates };
+      // 현재 전략이면 currentStrategy도 업데이트
+      if (this.currentStrategy.id === strategyId) {
+        this.currentStrategy = this.strategies[index];
+      }
+      this.addLog(`전략 수정: ${this.strategies[index].name}`, 'info');
+    }
+  }
+
+  // 전략 삭제 (커스텀만)
+  deleteStrategy(strategyId: string): void {
+    const strategy = this.strategies.find(s => s.id === strategyId);
+    if (strategy && strategy.isCustom) {
+      this.strategies = this.strategies.filter(s => s.id !== strategyId);
+      // 현재 전략이 삭제되면 기본으로
+      if (this.currentStrategy.id === strategyId) {
+        this.selectStrategy('balanced');
+      }
+      this.addLog(`전략 삭제: ${strategy.name}`, 'info');
+    }
+  }
+
+  // 전략 복제 (커스텀 생성용)
+  duplicateStrategy(strategyId: string, newName: string): Strategy | null {
+    const source = this.strategies.find(s => s.id === strategyId);
+    if (!source) return null;
+    
+    const newStrategy: Strategy = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: `custom_${Date.now()}`,
+      name: newName,
+      isCustom: true,
+    };
+    this.strategies.push(newStrategy);
+    this.addLog(`전략 복제: ${newName}`, 'info');
+    return newStrategy;
+  }
+
+  // 전략 목록 가져오기
+  getStrategies(): Strategy[] {
+    return [...this.strategies];
+  }
+
+  // 현재 전략 가져오기
+  getCurrentStrategy(): Strategy {
+    return this.currentStrategy;
   }
 
   // 플레이어 수동 조작 알림 (CommandManager에서 호출)
@@ -253,6 +500,7 @@ export class PlayerDirector {
     const myUnits = this.getMyUnits();
     const workers = myUnits.filter(u => u.getComponent<Unit>(Unit)?.unitType === UnitType.SCV);
     const combatUnits = this.getCombatUnits();
+    const strategy = this.currentStrategy;
     
     // 1. 현재 생산 중인 것들
     for (const building of myBuildings) {
@@ -265,19 +513,19 @@ export class PlayerDirector {
         this.nextActions.push({
           id: `prod-${building.id}`,
           type: 'production',
-          description: `${current.unitType} 생산 중`,
+          description: `${this.getUnitName(current.unitType)} 생산 중`,
           progress: current.progress,
         });
       }
     }
     
-    // 2. 다음 예정 행동
+    // 2. 다음 예정 행동 (전략 기반)
     // 일꾼 부족하면
-    if (workers.length < 12 && resources.minerals >= 50) {
+    if (workers.length < strategy.workerTarget && resources.minerals >= 50) {
       this.nextActions.push({
         id: 'plan-scv',
         type: 'production',
-        description: `SCV 생산 예정 (${workers.length}/12)`,
+        description: `SCV 생산 예정 (${workers.length}/${strategy.workerTarget})`,
       });
     }
     
@@ -291,12 +539,25 @@ export class PlayerDirector {
     }
     
     // 공격 준비 상태
-    if (combatUnits.length >= this.getAttackThreshold()) {
+    if (combatUnits.length >= strategy.attackThreshold) {
       this.nextActions.push({
         id: 'plan-attack',
         type: 'attack',
-        description: `공격 준비 완료 (${combatUnits.length}기)`,
+        description: `공격 준비 완료 (${combatUnits.length}/${strategy.attackThreshold}기)`,
       });
+    }
+    
+    // 유닛 생산 목표 표시
+    for (const config of strategy.unitProduction) {
+      if (!config.enabled || config.unitType === UnitType.SCV) continue;
+      const count = myUnits.filter(u => u.getComponent<Unit>(Unit)?.unitType === config.unitType).length;
+      if (config.targetCount > 0 && count < config.targetCount) {
+        this.nextActions.push({
+          id: `plan-${config.unitType}`,
+          type: 'production',
+          description: `${this.getUnitName(config.unitType)} (${count}/${config.targetCount})`,
+        });
+      }
     }
     
     // 최대 5개
@@ -332,12 +593,28 @@ export class PlayerDirector {
     }
   }
 
-  // 자동 생산
+  // 자동 생산 (Strategy 기반)
   private manageProduction(resources: { minerals: number; gas: number; supply: number; supplyMax: number }): void {
     const myBuildings = this.getMyBuildings();
     const buildingTypes = myBuildings.map(b => b.getComponent<Building>(Building)!.buildingType);
-    const workers = this.getMyUnits().filter(u => u.getComponent<Unit>(Unit)?.unitType === UnitType.SCV);
+    const myUnits = this.getMyUnits();
+    const strategy = this.currentStrategy;
     
+    // 유닛 타입별 현재 수 계산
+    const unitCounts = new Map<UnitType, number>();
+    for (const unit of myUnits) {
+      const unitComp = unit.getComponent<Unit>(Unit);
+      if (unitComp) {
+        unitCounts.set(unitComp.unitType, (unitCounts.get(unitComp.unitType) || 0) + 1);
+      }
+    }
+    
+    // 우선순위 순으로 정렬된 생산 설정
+    const sortedProduction = [...strategy.unitProduction]
+      .filter(p => p.enabled)
+      .sort((a, b) => b.priority - a.priority);
+    
+    // 건물별로 생산
     for (const building of myBuildings) {
       const buildingComp = building.getComponent<Building>(Building)!;
       const queue = building.getComponent<ProductionQueue>(ProductionQueue);
@@ -345,40 +622,58 @@ export class PlayerDirector {
       if (!queue || buildingComp.isConstructing) continue;
       if (!queue.canQueue()) continue;
       
-      // 커맨드센터: SCV (12기까지)
-      if (buildingComp.buildingType === BuildingType.COMMAND_CENTER) {
-        if (workers.length < 12 && this.canAfford(UnitType.SCV, resources)) {
-          this.trainUnit(queue, UnitType.SCV);
-          this.addLog('SCV 생산 시작', 'action');
-        }
-      }
-      
-      // 배럭: 마린 (전략에 따라 속도 조절)
-      if (buildingComp.buildingType === BuildingType.BARRACKS) {
-        if (this.canAfford(UnitType.MARINE, resources) && canTrainUnit(UnitType.MARINE, buildingTypes)) {
-          // 공격적: 빠른 생산, 방어적: 경제 우선
-          const combatUnits = this.getCombatUnits().length;
-          const maxUnits = this.settings.stance === DirectorStance.AGGRESSIVE ? 20 : 
-                          this.settings.stance === DirectorStance.DEFENSIVE ? 8 : 12;
-          
-          if (combatUnits < maxUnits) {
-            this.trainUnit(queue, UnitType.MARINE);
-            this.addLog('마린 생산 시작', 'action');
-          }
-        }
-      }
-      
-      // 팩토리: Vulture/Tank (자원 여유시)
-      if (buildingComp.buildingType === BuildingType.FACTORY) {
-        if (this.canAfford(UnitType.VULTURE, resources) && canTrainUnit(UnitType.VULTURE, buildingTypes)) {
-          this.trainUnit(queue, UnitType.VULTURE);
-          this.addLog('벌처 생산 시작', 'action');
-        } else if (this.canAfford(UnitType.SIEGE_TANK, resources) && canTrainUnit(UnitType.SIEGE_TANK, buildingTypes)) {
-          this.trainUnit(queue, UnitType.SIEGE_TANK);
-          this.addLog('시즈탱크 생산 시작', 'action');
-        }
+      // 이 건물에서 생산 가능한 유닛 찾기 (우선순위 순)
+      for (const config of sortedProduction) {
+        const currentCount = unitCounts.get(config.unitType) || 0;
+        
+        // 목표 수 체크 (0이면 무제한)
+        if (config.targetCount > 0 && currentCount >= config.targetCount) continue;
+        
+        // 비용 체크
+        if (!this.canAfford(config.unitType, resources)) continue;
+        
+        // 건물 요구사항 체크
+        if (!canTrainUnit(config.unitType, buildingTypes)) continue;
+        
+        // 해당 건물에서 생산 가능한지 체크
+        if (!this.canBuildingProduceUnit(buildingComp.buildingType, config.unitType)) continue;
+        
+        // 생산!
+        this.trainUnit(queue, config.unitType);
+        this.addLog(`${this.getUnitName(config.unitType)} 생산 시작`, 'action');
+        break; // 한 건물당 한 유닛씩
       }
     }
+  }
+
+  // 건물이 해당 유닛을 생산할 수 있는지 체크
+  private canBuildingProduceUnit(buildingType: BuildingType, unitType: UnitType): boolean {
+    const production: Record<BuildingType, UnitType[]> = {
+      [BuildingType.COMMAND_CENTER]: [UnitType.SCV],
+      [BuildingType.BARRACKS]: [UnitType.MARINE, UnitType.FIREBAT, UnitType.MEDIC],
+      [BuildingType.FACTORY]: [UnitType.VULTURE, UnitType.SIEGE_TANK, UnitType.GOLIATH],
+      [BuildingType.SUPPLY_DEPOT]: [],
+      [BuildingType.REFINERY]: [],
+      [BuildingType.ENGINEERING_BAY]: [],
+      [BuildingType.ARMORY]: [],
+      [BuildingType.BUNKER]: [],
+      [BuildingType.MISSILE_TURRET]: [],
+    };
+    return production[buildingType]?.includes(unitType) || false;
+  }
+
+  // 유닛 이름 (한글)
+  private getUnitName(unitType: UnitType): string {
+    const names: Record<UnitType, string> = {
+      [UnitType.SCV]: 'SCV',
+      [UnitType.MARINE]: '마린',
+      [UnitType.FIREBAT]: '파이어뱃',
+      [UnitType.MEDIC]: '메딕',
+      [UnitType.VULTURE]: '벌처',
+      [UnitType.SIEGE_TANK]: '시즈탱크',
+      [UnitType.GOLIATH]: '골리앗',
+    };
+    return names[unitType] || unitType;
   }
 
   // 서플라이 막힘 체크 및 건설
@@ -451,11 +746,7 @@ export class PlayerDirector {
 
   // 전략에 따른 공격 임계값
   private getAttackThreshold(): number {
-    switch (this.settings.stance) {
-      case DirectorStance.AGGRESSIVE: return 4;
-      case DirectorStance.DEFENSIVE: return 10;
-      default: return this.attackReadyThreshold;
-    }
+    return this.currentStrategy.attackThreshold;
   }
 
   // 공격 실행
@@ -694,6 +985,8 @@ export class PlayerDirector {
     return {
       enabled: this.settings.enabled,
       stance: this.settings.stance,
+      currentStrategy: this.currentStrategy,
+      availableStrategies: [...this.strategies],
       nextActions: [...this.nextActions],
       approvalRequest: this.approvalRequest,
       recentLogs: [...this.recentLogs],
