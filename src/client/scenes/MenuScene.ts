@@ -7,7 +7,9 @@ import { AIDifficulty } from '@shared/types';
 
 export class MenuScene extends Phaser.Scene {
   private difficultyPanel: Phaser.GameObjects.Container | null = null;
+  private aiCountPanel: Phaser.GameObjects.Container | null = null;
   private mainButtons: Phaser.GameObjects.Container[] = [];
+  private selectedDifficulty: AIDifficulty = AIDifficulty.NORMAL;
 
   constructor() {
     super({ key: 'MenuScene' });
@@ -132,7 +134,88 @@ export class MenuScene extends Phaser.Scene {
     bg.on('pointerout', () => bg.setFillStyle(color));
     bg.on('pointerdown', () => bg.setFillStyle(color - 0x111111));
     bg.on('pointerup', () => {
-      this.startSinglePlayer(difficulty);
+      this.selectedDifficulty = difficulty;
+      this.showAICountSelection();
+    });
+
+    return container;
+  }
+
+  private showAICountSelection(): void {
+    // 난이도 패널 숨기기
+    if (this.difficultyPanel) {
+      this.difficultyPanel.setVisible(false);
+    }
+
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+
+    // AI 수 선택 패널 생성
+    this.aiCountPanel = this.add.container(width / 2, height / 2);
+
+    // AI 수 선택 텍스트
+    const selectText = this.add.text(0, -100, 'Select Number of AI Opponents', {
+      fontSize: '24px',
+      color: '#ffffff',
+    });
+    selectText.setOrigin(0.5);
+    this.aiCountPanel.add(selectText);
+
+    // 1 vs 1
+    const btn1 = this.createAICountButton(0, -30, '1 vs 1', 1, 0x225588);
+    this.aiCountPanel.add(btn1);
+
+    // 1 vs 2
+    const btn2 = this.createAICountButton(0, 40, '1 vs 2', 2, 0x885522);
+    this.aiCountPanel.add(btn2);
+
+    // 1 vs 3
+    const btn3 = this.createAICountButton(0, 110, '1 vs 3', 3, 0x882222);
+    this.aiCountPanel.add(btn3);
+
+    // 뒤로가기 버튼
+    const backBtn = this.createButton(0, 190, 'Back', () => this.hideAICountSelection());
+    this.aiCountPanel.add(backBtn);
+  }
+
+  private hideAICountSelection(): void {
+    if (this.aiCountPanel) {
+      this.aiCountPanel.destroy();
+      this.aiCountPanel = null;
+    }
+
+    // 난이도 패널 다시 표시
+    if (this.difficultyPanel) {
+      this.difficultyPanel.setVisible(true);
+    }
+  }
+
+  private createAICountButton(
+    x: number,
+    y: number,
+    text: string,
+    aiCount: number,
+    color: number
+  ): Phaser.GameObjects.Container {
+    const container = this.add.container(x, y);
+
+    const bg = this.add.rectangle(0, 0, 250, 45, color);
+    bg.setStrokeStyle(2, color + 0x222222);
+    bg.setInteractive({ useHandCursor: true });
+
+    const btnText = this.add.text(0, 0, text, {
+      fontSize: '20px',
+      color: '#ffffff',
+    });
+    btnText.setOrigin(0.5);
+
+    container.add([bg, btnText]);
+
+    bg.on('pointerover', () => bg.setFillStyle(color + 0x111111));
+    bg.on('pointerout', () => bg.setFillStyle(color));
+    bg.on('pointerdown', () => bg.setFillStyle(color - 0x111111));
+    bg.on('pointerup', () => {
+      this.startSinglePlayer(this.selectedDifficulty, aiCount);
     });
 
     return container;
@@ -184,8 +267,8 @@ export class MenuScene extends Phaser.Scene {
     return container;
   }
 
-  private startSinglePlayer(difficulty: AIDifficulty = AIDifficulty.NORMAL): void {
+  private startSinglePlayer(difficulty: AIDifficulty = AIDifficulty.NORMAL, aiCount: number = 1): void {
     // 게임 씬으로 전환
-    this.scene.start('GameScene', { mode: 'single', difficulty });
+    this.scene.start('GameScene', { mode: 'single', difficulty, aiCount });
   }
 }

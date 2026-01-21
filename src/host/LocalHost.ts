@@ -23,103 +23,124 @@ import { UNIT_STATS, BUILDING_STATS, MINERAL_AMOUNT, MINERAL_GATHER_RATE, GAS_AM
 export class LocalHost {
   private gameState: GameState;
   private pathfinding: PathfindingService | null;
+  private aiCount: number = 1;
 
   constructor(gameState: GameState, pathfinding?: PathfindingService) {
     this.gameState = gameState;
     this.pathfinding = pathfinding || null;
   }
 
+  setAICount(count: number): void {
+    this.aiCount = Math.min(3, Math.max(1, count));
+  }
+
+  getAICount(): number {
+    return this.aiCount;
+  }
+
   setupInitialEntities(): void {
-    console.log('LocalHost: Setting up initial entities...');
+    console.log(`LocalHost: Setting up initial entities (1 vs ${this.aiCount})...`);
 
     const tileSize = this.gameState.config.tileSize;
     const mapSize = this.gameState.config.mapWidth * tileSize;
 
-    // 플레이어 자원 초기화 (먼저 설정하여 UI에 즉시 반영)
+    // 시작 위치 정의 (4개 모서리)
+    const startPositions = [
+      { x: 6, y: 8 },                    // 좌상단 (플레이어 1)
+      { x: mapSize / tileSize - 8, y: mapSize / tileSize - 10 }, // 우하단 (AI 1)
+      { x: mapSize / tileSize - 8, y: 8 },  // 우상단 (AI 2)
+      { x: 6, y: mapSize / tileSize - 10 }, // 좌하단 (AI 3)
+    ];
+
+    // 미네랄 오프셋 (베이스 기준)
+    const mineralOffsets = [
+      { dx: -4, dy: -5 },  // 좌상단용
+      { dx: 2, dy: 7 },    // 우하단용
+      { dx: 2, dy: -5 },   // 우상단용
+      { dx: -4, dy: 7 },   // 좌하단용
+    ];
+
+    // 플레이어 1 자원 초기화
     this.gameState.modifyPlayerResources(1, { 
-      minerals: 200,  // 추가 미네랄
-      supply: 8,      // 4 SCV + 4 Marine
-      supplyMax: 18   // CC(10) + Depot(8)
-    });
-    this.gameState.modifyPlayerResources(2, { 
       minerals: 200,
-      supply: 6,      // 2 SCV + 4 Marine
-      supplyMax: 10   // CC(10)
+      supply: 8,
+      supplyMax: 18
     });
 
-    // 배치 모드 시작 (건물 생성 시 setGrid 호출 최소화)
+    // AI 플레이어들 자원 초기화
+    for (let i = 0; i < this.aiCount; i++) {
+      const aiPlayerId = 2 + i;
+      this.gameState.modifyPlayerResources(aiPlayerId, { 
+        minerals: 200,
+        supply: 6,
+        supplyMax: 10
+      });
+    }
+
+    // 배치 모드 시작
     if (this.pathfinding) {
       this.pathfinding.beginBatch();
     }
 
     // ====== 플레이어 1 (좌측 상단) ======
-    // 커맨드 센터
-    this.createBuilding(BuildingType.COMMAND_CENTER, 1, 6 * tileSize, 8 * tileSize, true);
-    // 배럭
-    this.createBuilding(BuildingType.BARRACKS, 1, 12 * tileSize, 8 * tileSize, true);
-    // 서플라이 디팟
-    this.createBuilding(BuildingType.SUPPLY_DEPOT, 1, 3 * tileSize, 8 * tileSize, true);
+    this.setupPlayerBase(1, startPositions[0], mineralOffsets[0], tileSize, true);
 
-    // ====== 플레이어 2 (AI - 우측 하단) ======
-    const p2BaseX = mapSize - 8 * tileSize;
-    const p2BaseY = mapSize - 10 * tileSize;
+    // ====== AI 플레이어들 ======
+    for (let i = 0; i < this.aiCount; i++) {
+      const aiPlayerId = 2 + i;
+      this.setupPlayerBase(aiPlayerId, startPositions[i + 1], mineralOffsets[i + 1], tileSize, false);
+    }
 
-    // 커맨드 센터
-    this.createBuilding(BuildingType.COMMAND_CENTER, 2, p2BaseX, p2BaseY, true);
-    // 배럭
-    this.createBuilding(BuildingType.BARRACKS, 2, p2BaseX - 6 * tileSize, p2BaseY, true);
-
-    // 배치 모드 종료 (그리드 한 번에 적용)
+    // 배치 모드 종료
     if (this.pathfinding) {
       this.pathfinding.endBatch();
     }
 
-    // SCV (플레이어 1)
-    this.createUnit(UnitType.SCV, 1, 5 * tileSize, 5 * tileSize);
-    this.createUnit(UnitType.SCV, 1, 6 * tileSize, 5 * tileSize);
-    this.createUnit(UnitType.SCV, 1, 7 * tileSize, 5 * tileSize);
-    this.createUnit(UnitType.SCV, 1, 8 * tileSize, 5 * tileSize);
-
-    // 마린 (플레이어 1)
-    this.createUnit(UnitType.MARINE, 1, 10 * tileSize, 5 * tileSize);
-    this.createUnit(UnitType.MARINE, 1, 11 * tileSize, 5 * tileSize);
-    this.createUnit(UnitType.MARINE, 1, 12 * tileSize, 5 * tileSize);
-    this.createUnit(UnitType.MARINE, 1, 13 * tileSize, 5 * tileSize);
-
-    // 미네랄 (플레이어 1 근처)
-    this.createMineral(2 * tileSize, 3 * tileSize);
-    this.createMineral(3 * tileSize, 3 * tileSize);
-    this.createMineral(4 * tileSize, 3 * tileSize);
-    this.createMineral(5 * tileSize, 3 * tileSize);
-    this.createMineral(6 * tileSize, 3 * tileSize);
-    this.createMineral(7 * tileSize, 3 * tileSize);
-    this.createMineral(8 * tileSize, 3 * tileSize);
-    this.createMineral(9 * tileSize, 3 * tileSize);
-    
-    // 가스 (플레이어 1 근처)
-    this.createGasGeyser(11 * tileSize, 3 * tileSize);
-    this.createGasGeyser(12 * tileSize, 3 * tileSize);
-
-    // SCV (플레이어 2)
-    this.createUnit(UnitType.SCV, 2, p2BaseX + tileSize, p2BaseY - 3 * tileSize);
-    this.createUnit(UnitType.SCV, 2, p2BaseX + 2 * tileSize, p2BaseY - 3 * tileSize);
-
-    // 마린 (플레이어 2)
-    this.createUnit(UnitType.MARINE, 2, p2BaseX - 2 * tileSize, p2BaseY - 3 * tileSize);
-    this.createUnit(UnitType.MARINE, 2, p2BaseX - 3 * tileSize, p2BaseY - 3 * tileSize);
-    this.createUnit(UnitType.MARINE, 2, p2BaseX - 4 * tileSize, p2BaseY - 3 * tileSize);
-    this.createUnit(UnitType.MARINE, 2, p2BaseX - 5 * tileSize, p2BaseY - 3 * tileSize);
-
-    // 미네랄 (플레이어 2 근처)
-    for (let i = 0; i < 8; i++) {
-      this.createMineral(mapSize - (2 + i) * tileSize, mapSize - 3 * tileSize);
-    }
-    
-    // 가스 (플레이어 2 근처)
-    this.createGasGeyser(mapSize - 11 * tileSize, mapSize - 3 * tileSize);
-    this.createGasGeyser(mapSize - 12 * tileSize, mapSize - 3 * tileSize);
-
     console.log(`Created ${this.gameState.getAllEntities().length} entities`);
+  }
+
+  private setupPlayerBase(
+    playerId: number,
+    basePos: { x: number; y: number },
+    mineralOffset: { dx: number; dy: number },
+    tileSize: number,
+    isHuman: boolean
+  ): void {
+    const baseX = basePos.x * tileSize;
+    const baseY = basePos.y * tileSize;
+
+    // 커맨드 센터
+    this.createBuilding(BuildingType.COMMAND_CENTER, playerId, baseX, baseY, true);
+    // 배럭
+    this.createBuilding(BuildingType.BARRACKS, playerId, baseX + 6 * tileSize, baseY, true);
+
+    // 인간 플레이어는 서플라이 디팟 추가
+    if (isHuman) {
+      this.createBuilding(BuildingType.SUPPLY_DEPOT, playerId, baseX - 3 * tileSize, baseY, true);
+    }
+
+    // SCV
+    const scvCount = isHuman ? 4 : 2;
+    for (let i = 0; i < scvCount; i++) {
+      this.createUnit(UnitType.SCV, playerId, baseX - tileSize + i * tileSize, baseY - 3 * tileSize);
+    }
+
+    // 마린
+    const marineCount = 4;
+    for (let i = 0; i < marineCount; i++) {
+      this.createUnit(UnitType.MARINE, playerId, baseX + 4 * tileSize + i * tileSize, baseY - 3 * tileSize);
+    }
+
+    // 미네랄
+    const mineralBaseX = baseX + mineralOffset.dx * tileSize;
+    const mineralBaseY = baseY + mineralOffset.dy * tileSize;
+    for (let i = 0; i < 8; i++) {
+      this.createMineral(mineralBaseX + i * tileSize, mineralBaseY);
+    }
+
+    // 가스
+    this.createGasGeyser(mineralBaseX + 9 * tileSize, mineralBaseY);
+    this.createGasGeyser(mineralBaseX + 10 * tileSize, mineralBaseY);
   }
 
   private createUnit(unitType: UnitType, playerId: number, x: number, y: number): void {

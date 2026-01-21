@@ -48,6 +48,7 @@ import { StrategyEditor } from '../ui/StrategyEditor';
 interface GameSceneData {
   mode: 'single' | 'multi';
   difficulty?: AIDifficulty;
+  aiCount?: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -55,7 +56,6 @@ export class GameScene extends Phaser.Scene {
   private gameLoop!: GameLoop;
   private localHost!: LocalHost;
   private pathfinding!: PathfindingService;
-  private aiController!: AIController;
   
   // 렌더러
   private unitRenderer!: UnitRenderer;
@@ -80,6 +80,8 @@ export class GameScene extends Phaser.Scene {
   private gameOverText!: Phaser.GameObjects.Text;
   private isPaused: boolean = false;
   private aiDifficulty: AIDifficulty = AIDifficulty.NORMAL;
+  private aiCount: number = 1;
+  private aiControllers: AIController[] = [];
   
   // 감독 모드
   private playerDirector!: PlayerDirector;
@@ -101,8 +103,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data: GameSceneData): void {
-    console.log('GameScene init, mode:', data.mode, 'difficulty:', data.difficulty);
+    console.log('GameScene init, mode:', data.mode, 'difficulty:', data.difficulty, 'aiCount:', data.aiCount);
     this.aiDifficulty = data.difficulty || AIDifficulty.NORMAL;
+    this.aiCount = data.aiCount || 1;
   }
 
   create(): void {
@@ -114,10 +117,13 @@ export class GameScene extends Phaser.Scene {
     
     // 로컬 호스트 초기화 (싱글플레이어)
     this.localHost = new LocalHost(this.gameState, this.pathfinding);
+    this.localHost.setAICount(this.aiCount);
     
-    // 플레이어 추가
+    // 플레이어 추가 (1 = 유저, 2~4 = AI)
     this.gameState.addPlayer(1, Race.TERRAN);
-    this.gameState.addPlayer(2, Race.TERRAN); // AI
+    for (let i = 0; i < this.aiCount; i++) {
+      this.gameState.addPlayer(2 + i, Race.TERRAN);
+    }
     
     // 시스템 등록 (우선순위 순서)
     this.visionSystem = new VisionSystem();
@@ -137,8 +143,13 @@ export class GameScene extends Phaser.Scene {
     this.gameState.addSystem(new DefenseSystem()); // 방어 건물 공격 시스템
     this.gameState.addSystem(new CombatSystem());
     
-    // AI 컨트롤러 (패스파인딩 연결)
-    this.aiController = new AIController(this.gameState, 2, this.pathfinding, this.aiDifficulty);
+    // AI 컨트롤러들 (패스파인딩 연결)
+    this.aiControllers = [];
+    for (let i = 0; i < this.aiCount; i++) {
+      const aiPlayerId = 2 + i;
+      const controller = new AIController(this.gameState, aiPlayerId, this.pathfinding, this.aiDifficulty);
+      this.aiControllers.push(controller);
+    }
     
     // 게임 루프 초기화
     this.gameLoop = new GameLoop(this.gameState, {
@@ -352,7 +363,9 @@ export class GameScene extends Phaser.Scene {
   private onGameTick(tick: number): void {
     // AI 업데이트 (10틱마다)
     if (tick % 10 === 0) {
-      this.aiController.update();
+      for (const ai of this.aiControllers) {
+        ai.update();
+      }
     }
     
     // 플레이어 감독 모드 업데이트 (매 틱)
