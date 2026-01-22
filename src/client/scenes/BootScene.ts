@@ -42,10 +42,11 @@ export class BootScene extends Phaser.Scene {
     });
 
     // ==========================================
-    // 에셋 로딩 (플레이스홀더)
+    // Kenney Sci-Fi RTS 에셋 로딩
     // ==========================================
+    this.loadKenneyAssets();
     
-    // 플레이스홀더 이미지 생성 (실제 에셋 없이 테스트용)
+    // 플레이스홀더 에셋도 생성 (폴백용)
     this.createPlaceholderAssets();
   }
 
@@ -54,7 +55,18 @@ export class BootScene extends Phaser.Scene {
     this.scene.start('MenuScene');
   }
 
-  // 플레이스홀더 에셋 생성 (개발용)
+  // Kenney Sci-Fi RTS 에셋 로딩
+  private loadKenneyAssets(): void {
+    // 스프라이트시트 + XML 아틀라스 로딩
+    // publicDir이 'assets'이므로 상대 경로 사용
+    this.load.atlasXML(
+      'scifi',
+      'sprites/scifiRTS_spritesheet.png',
+      'sprites/scifiRTS_spritesheet.xml'
+    );
+  }
+
+  // 플레이스홀더 에셋 생성 (폴백용)
   private createPlaceholderAssets(): void {
     // 유닛 플레이스홀더 (32x32 사각형)
     const unitGraphics = this.make.graphics({ x: 0, y: 0 });

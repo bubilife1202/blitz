@@ -1,5 +1,5 @@
 // ==========================================
-// UnitRenderer - 유닛 렌더링 (타입별 구분)
+// UnitRenderer - 유닛 렌더링 (스프라이트 기반)
 // ==========================================
 
 import Phaser from 'phaser';
@@ -15,32 +15,55 @@ import { UnitType, type PlayerId } from '@shared/types';
 import type { VisionSystem } from '@core/systems/VisionSystem';
 
 interface UnitVisual {
-  graphics: Phaser.GameObjects.Graphics;
+  sprite: Phaser.GameObjects.Sprite;
   selectionCircle: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
-  label: Phaser.GameObjects.Text;
+  effectsGraphics: Phaser.GameObjects.Graphics;
 }
 
-// 플레이어별 색상 (밝은 색: 유닛, 어두운 색: 테두리)
-const PLAYER_COLORS: Record<PlayerId, { main: number; dark: number; light: number }> = {
-  1: { main: 0x00cc00, dark: 0x006600, light: 0x66ff66 }, // 초록 (플레이어)
-  2: { main: 0xcc0000, dark: 0x660000, light: 0xff6666 }, // 빨강 (적/AI)
+// 플레이어별 색상 (틴트용)
+const PLAYER_TINTS: Record<PlayerId, number> = {
+  1: 0x88ff88, // 초록 (플레이어)
+  2: 0xff8888, // 빨강 (적/AI)
 };
 
-// 유닛 타입별 설정
-const UNIT_VISUALS: Record<UnitType, { 
-  shape: 'circle' | 'square' | 'diamond' | 'hexagon' | 'tank'; 
-  size: number; 
-  label: string;
-  secondaryColor?: number;
-}> = {
-  [UnitType.SCV]: { shape: 'square', size: 12, label: 'SCV' },
-  [UnitType.MARINE]: { shape: 'circle', size: 10, label: 'M' },
-  [UnitType.FIREBAT]: { shape: 'square', size: 11, label: 'F', secondaryColor: 0xff6600 },
-  [UnitType.MEDIC]: { shape: 'diamond', size: 10, label: '+', secondaryColor: 0xffffff },
-  [UnitType.VULTURE]: { shape: 'diamond', size: 14, label: 'V' },
-  [UnitType.SIEGE_TANK]: { shape: 'tank', size: 16, label: 'T' },
-  [UnitType.GOLIATH]: { shape: 'hexagon', size: 14, label: 'G' },
+// 유닛 타입별 스프라이트 매핑 (플레이어 1 / 플레이어 2)
+const UNIT_SPRITES: Record<UnitType, { p1: string; p2: string; scale: number }> = {
+  [UnitType.SCV]: { 
+    p1: 'scifiUnit_01.png', 
+    p2: 'scifiUnit_12.png',
+    scale: 1.2
+  },
+  [UnitType.MARINE]: { 
+    p1: 'scifiUnit_02.png', 
+    p2: 'scifiUnit_13.png',
+    scale: 1.2
+  },
+  [UnitType.FIREBAT]: { 
+    p1: 'scifiUnit_03.png', 
+    p2: 'scifiUnit_14.png',
+    scale: 1.2
+  },
+  [UnitType.MEDIC]: { 
+    p1: 'scifiUnit_04.png', 
+    p2: 'scifiUnit_15.png',
+    scale: 1.2
+  },
+  [UnitType.VULTURE]: { 
+    p1: 'scifiUnit_07.png', 
+    p2: 'scifiUnit_19.png',
+    scale: 1.0
+  },
+  [UnitType.SIEGE_TANK]: { 
+    p1: 'scifiUnit_09.png', 
+    p2: 'scifiUnit_21.png',
+    scale: 0.9
+  },
+  [UnitType.GOLIATH]: { 
+    p1: 'scifiUnit_08.png', 
+    p2: 'scifiUnit_20.png',
+    scale: 1.0
+  },
 };
 
 export class UnitRenderer {
@@ -50,13 +73,17 @@ export class UnitRenderer {
   private visionSystem?: VisionSystem;
   private hoveredEntityId: number | null = null;
   private hoverGraphics: Phaser.GameObjects.Graphics | null = null;
+  private useSprites: boolean = false;
 
   constructor(scene: Phaser.Scene, localPlayerId: PlayerId = 1, visionSystem?: VisionSystem) {
     this.scene = scene;
     this.localPlayerId = localPlayerId;
     this.visionSystem = visionSystem;
     this.hoverGraphics = this.scene.add.graphics();
-    this.hoverGraphics.setDepth(95); // 유닛 아래, 선택 위
+    this.hoverGraphics.setDepth(95);
+    
+    // 스프라이트시트 로드 여부 확인
+    this.useSprites = this.scene.textures.exists('scifi');
   }
 
   setVisionSystem(visionSystem: VisionSystem): void {
@@ -83,7 +110,6 @@ export class UnitRenderer {
         this.visionSystem.getVisibilityAtPosition(this.localPlayerId, position.x, position.y) === 2;
 
       if (isEnemyUnit && !isVisible) {
-        // 적 유닛이 안 보이면 비주얼 제거/숨김
         const existingVisual = this.visuals.get(entity.id);
         if (existingVisual) {
           this.setVisualVisible(existingVisual, false);
@@ -131,8 +157,7 @@ export class UnitRenderer {
     
     if (!position || !unit) return;
     
-    const unitConfig = UNIT_VISUALS[unit.unitType] || { shape: 'circle', size: 10 };
-    const radius = unitConfig.size + 6;
+    const radius = 20;
     
     // 호버 링 (점선 효과 - 시간 기반 회전)
     const time = this.scene.time.now / 500;
@@ -155,26 +180,37 @@ export class UnitRenderer {
     }
   }
 
-  private createVisual(_entity: Entity): UnitVisual {
-    const graphics = this.scene.add.graphics();
-    graphics.setDepth(10);
+  private createVisual(entity: Entity): UnitVisual {
+    const unit = entity.getComponent<Unit>(Unit);
+    const owner = entity.getComponent<Owner>(Owner);
+    const playerId = owner?.playerId ?? 1;
+    
+    let sprite: Phaser.GameObjects.Sprite;
+    
+    if (this.useSprites && unit) {
+      // 스프라이트 사용
+      const spriteConfig = UNIT_SPRITES[unit.unitType];
+      const frameName = playerId === 1 ? spriteConfig.p1 : spriteConfig.p2;
+      sprite = this.scene.add.sprite(0, 0, 'scifi', frameName);
+      sprite.setScale(spriteConfig.scale);
+    } else {
+      // 폴백: 플레이스홀더 사용
+      sprite = this.scene.add.sprite(0, 0, 'unit_placeholder');
+      sprite.setTint(PLAYER_TINTS[playerId] || 0xffffff);
+    }
+    
+    sprite.setDepth(10);
 
     const selectionCircle = this.scene.add.graphics();
     selectionCircle.setDepth(9);
 
     const hpBar = this.scene.add.graphics();
     hpBar.setDepth(11);
+    
+    const effectsGraphics = this.scene.add.graphics();
+    effectsGraphics.setDepth(12);
 
-    const label = this.scene.add.text(0, 0, '', {
-      fontSize: '8px',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 2,
-    });
-    label.setOrigin(0.5, 0.5);
-    label.setDepth(12);
-
-    return { graphics, selectionCircle, hpBar, label };
+    return { sprite, selectionCircle, hpBar, effectsGraphics };
   }
 
   private updateVisual(visual: UnitVisual, entity: Entity): void {
@@ -186,299 +222,127 @@ export class UnitRenderer {
     const gatherer = entity.getComponent<Gatherer>(Gatherer);
     const combat = entity.getComponent<Combat>(Combat);
 
-    const playerId = owner?.playerId ?? 0;
-    const colors = PLAYER_COLORS[playerId] || { main: 0x888888, dark: 0x444444, light: 0xcccccc };
-    const unitConfig = UNIT_VISUALS[unit.unitType] || { shape: 'circle', size: 10, label: '?' };
+    const playerId = owner?.playerId ?? 1;
+    
+    // 스프라이트 프레임 업데이트 (시즈 탱크 모드 전환 등)
+    if (this.useSprites) {
+      const spriteConfig = UNIT_SPRITES[unit.unitType];
+      
+      // 시즈 모드일 때 다른 스프라이트 사용
+      if (unit.unitType === UnitType.SIEGE_TANK && unit.isSieged) {
+        const siegeFrame = playerId === 1 ? 'scifiUnit_10.png' : 'scifiUnit_22.png';
+        visual.sprite.setFrame(siegeFrame);
+      } else {
+        const normalFrame = playerId === 1 ? spriteConfig.p1 : spriteConfig.p2;
+        visual.sprite.setFrame(normalFrame);
+      }
+    }
 
     // 위치 업데이트
-    visual.graphics.setPosition(position.x, position.y);
+    visual.sprite.setPosition(position.x, position.y);
     visual.selectionCircle.setPosition(position.x, position.y);
     visual.hpBar.setPosition(position.x, position.y);
-    visual.label.setPosition(position.x, position.y + unitConfig.size + 8);
-
-    // 유닛 그리기
-    visual.graphics.clear();
+    visual.effectsGraphics.setPosition(position.x, position.y);
     
     // 자원 운반 중인 SCV는 다르게 표시
     const isCarrying = gatherer?.isCarryingResources();
-    const fillColor = isCarrying ? 0x00ffff : colors.main;
-    
-    visual.graphics.fillStyle(fillColor, 1);
-    visual.graphics.lineStyle(2, colors.dark, 1);
-
-    const time = Date.now() / 1000;
-    
-    // 그림자 효과
-    visual.graphics.fillStyle(0x000000, 0.3);
-    visual.graphics.fillEllipse(2, 4, unitConfig.size * 1.2, unitConfig.size * 0.6);
-    
-    switch (unitConfig.shape) {
-      case 'circle': {
-        // Marine - 외부 글로우
-        visual.graphics.fillStyle(colors.light, 0.2);
-        visual.graphics.fillCircle(0, 0, unitConfig.size + 3);
-        // 메인 바디
-        visual.graphics.fillStyle(fillColor, 1);
-        visual.graphics.fillCircle(0, 0, unitConfig.size);
-        // 하이라이트
-        visual.graphics.fillStyle(0xffffff, 0.3);
-        visual.graphics.fillCircle(-unitConfig.size * 0.3, -unitConfig.size * 0.3, unitConfig.size * 0.4);
-        // 테두리
-        visual.graphics.lineStyle(2, colors.dark, 1);
-        visual.graphics.strokeCircle(0, 0, unitConfig.size);
-        break;
-      }
-      case 'square': {
-        const s = unitConfig.size;
-        // 외부 글로우
-        visual.graphics.fillStyle(colors.light, 0.15);
-        visual.graphics.fillRect(-s - 2, -s - 2, s * 2 + 4, s * 2 + 4);
-        // 메인 바디
-        visual.graphics.fillStyle(fillColor, 1);
-        visual.graphics.fillRect(-s, -s, s * 2, s * 2);
-        // 테두리
-        visual.graphics.lineStyle(2, colors.dark, 1);
-        visual.graphics.strokeRect(-s, -s, s * 2, s * 2);
-        // Firebat 화염 악센트
-        if (unitConfig.secondaryColor) {
-          visual.graphics.fillStyle(unitConfig.secondaryColor, 0.7);
-          visual.graphics.fillRect(-s + 3, -s + 3, s - 3, s * 2 - 6);
-          // 화염 이펙트
-          const flameFlicker = Math.sin(time * 8) * 0.3;
-          visual.graphics.fillStyle(0xffff00, 0.4 + flameFlicker);
-          visual.graphics.fillCircle(s * 0.6, 0, 4);
-        }
-        // 하이라이트
-        visual.graphics.fillStyle(0xffffff, 0.2);
-        visual.graphics.fillRect(-s + 2, -s + 2, s * 0.6, s * 0.6);
-        break;
-      }
-      case 'diamond': {
-        const s = unitConfig.size;
-        // 외부 글로우
-        visual.graphics.fillStyle(colors.light, 0.2);
-        visual.graphics.beginPath();
-        visual.graphics.moveTo(0, -s - 3);
-        visual.graphics.lineTo(s + 3, 0);
-        visual.graphics.lineTo(0, s + 3);
-        visual.graphics.lineTo(-s - 3, 0);
-        visual.graphics.closePath();
-        visual.graphics.fillPath();
-        // 메인 바디
-        visual.graphics.fillStyle(fillColor, 1);
-        visual.graphics.beginPath();
-        visual.graphics.moveTo(0, -s);
-        visual.graphics.lineTo(s, 0);
-        visual.graphics.lineTo(0, s);
-        visual.graphics.lineTo(-s, 0);
-        visual.graphics.closePath();
-        visual.graphics.fillPath();
-        visual.graphics.lineStyle(2, colors.dark, 1);
-        visual.graphics.strokePath();
-        // Medic 십자 마크 (펄스)
-        if (unitConfig.secondaryColor) {
-          const crossPulse = 0.8 + Math.sin(time * 3) * 0.2;
-          visual.graphics.fillStyle(unitConfig.secondaryColor, crossPulse);
-          visual.graphics.fillRect(-2, -s * 0.5, 4, s);
-          visual.graphics.fillRect(-s * 0.5, -2, s, 4);
-        }
-        break;
-      }
-      case 'hexagon': {
-        const s = unitConfig.size;
-        // 외부 글로우
-        visual.graphics.fillStyle(colors.light, 0.15);
-        visual.graphics.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const angle = (Math.PI / 3) * i - Math.PI / 6;
-          const x = Math.cos(angle) * (s + 3);
-          const y = Math.sin(angle) * (s + 3);
-          if (i === 0) visual.graphics.moveTo(x, y);
-          else visual.graphics.lineTo(x, y);
-        }
-        visual.graphics.closePath();
-        visual.graphics.fillPath();
-        // 메인 바디
-        visual.graphics.fillStyle(fillColor, 1);
-        visual.graphics.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const angle = (Math.PI / 3) * i - Math.PI / 6;
-          const x = Math.cos(angle) * s;
-          const y = Math.sin(angle) * s;
-          if (i === 0) visual.graphics.moveTo(x, y);
-          else visual.graphics.lineTo(x, y);
-        }
-        visual.graphics.closePath();
-        visual.graphics.fillPath();
-        visual.graphics.lineStyle(2, colors.dark, 1);
-        visual.graphics.strokePath();
-        // 내부 디테일
-        visual.graphics.fillStyle(colors.dark, 0.5);
-        visual.graphics.fillCircle(0, 0, s * 0.4);
-        break;
-      }
-      case 'tank': {
-        const s = unitConfig.size;
-        const tankUnit = entity.getComponent<Unit>(Unit);
-        const isSieged = tankUnit?.isSieged || false;
-        
-        // 시즈 모드 외부 효과
-        if (isSieged) {
-          const siegePulse = 0.3 + Math.sin(time * 2) * 0.15;
-          visual.graphics.fillStyle(0xff4400, siegePulse);
-          visual.graphics.fillCircle(0, 0, s + 8);
-        }
-        
-        // 트랙 (캐터필러)
-        visual.graphics.fillStyle(0x333333, 1);
-        visual.graphics.fillRect(-s - 2, -s * 0.7, s * 2 + 4, 4);
-        visual.graphics.fillRect(-s - 2, s * 0.3, s * 2 + 4, 4);
-        // 트랙 디테일
-        for (let i = 0; i < 5; i++) {
-          visual.graphics.fillStyle(0x555555, 1);
-          visual.graphics.fillRect(-s + i * (s * 0.5), -s * 0.7, 2, 4);
-          visual.graphics.fillRect(-s + i * (s * 0.5), s * 0.3, 2, 4);
-        }
-        
-        // 메인 바디 (그라데이션 효과)
-        visual.graphics.fillStyle(colors.dark, 1);
-        visual.graphics.fillRect(-s, -s * 0.55, s * 2, s * 1.1);
-        visual.graphics.fillStyle(fillColor, 1);
-        visual.graphics.fillRect(-s + 2, -s * 0.5, s * 2 - 4, s);
-        // 상부 하이라이트
-        visual.graphics.fillStyle(colors.light, 0.3);
-        visual.graphics.fillRect(-s + 2, -s * 0.5, s * 2 - 4, s * 0.3);
-        
-        // 포탑
-        visual.graphics.fillStyle(colors.dark, 1);
-        visual.graphics.fillCircle(0, 0, s * 0.5);
-        visual.graphics.fillStyle(fillColor, 1);
-        visual.graphics.fillCircle(0, 0, s * 0.4);
-        
-        // 포신
-        const barrelLength = isSieged ? s * 1.8 : s * 1.0;
-        const barrelWidth = isSieged ? 5 : 4;
-        visual.graphics.fillStyle(colors.dark, 1);
-        visual.graphics.fillRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
-        // 포신 끝
-        visual.graphics.fillStyle(0x444444, 1);
-        visual.graphics.fillRect(barrelLength - 4, -barrelWidth / 2 - 1, 4, barrelWidth + 2);
-        
-        // 시즈 모드 인디케이터
-        if (isSieged) {
-          visual.graphics.lineStyle(2, 0xff4400, 0.8);
-          visual.graphics.strokeCircle(0, 0, s + 5);
-          // "S" 텍스트 대신 시각적 표시
-          visual.graphics.fillStyle(0xff0000, 0.8);
-          visual.graphics.fillCircle(s * 0.8, -s * 0.3, 3);
-        }
-        
-        // 테두리
-        visual.graphics.lineStyle(1, colors.dark, 1);
-        visual.graphics.strokeRect(-s, -s * 0.55, s * 2, s * 1.1);
-        break;
-      }
+    if (isCarrying) {
+      visual.sprite.setTint(0x00ffff);
+    } else if (!this.useSprites) {
+      visual.sprite.setTint(PLAYER_TINTS[playerId] || 0xffffff);
+    } else {
+      visual.sprite.clearTint();
     }
-
-    // 이동 방향 표시 (이동 중일 때)
-    if (movement?.isMoving && movement.targetX !== null && movement.targetY !== null) {
-      const angle = Math.atan2(movement.targetY - position.y, movement.targetX - position.x);
-      const arrowLen = unitConfig.size + 5;
-      visual.graphics.lineStyle(2, colors.light, 0.8);
-      visual.graphics.lineBetween(0, 0, Math.cos(angle) * arrowLen, Math.sin(angle) * arrowLen);
-    }
+    
+    // 이펙트 그래픽 클리어
+    visual.effectsGraphics.clear();
+    const time = this.scene.time.now / 1000;
     
     // 채굴 효과 (GATHERING 상태일 때)
     if (gatherer?.state === GathererState.GATHERING) {
-      const time = Date.now() / 100;
-      // 펄스 효과
-      const pulseSize = Math.sin(time) * 2;
-      visual.graphics.lineStyle(2, 0x00ffff, 0.6);
-      visual.graphics.strokeCircle(0, 0, unitConfig.size + 4 + pulseSize);
+      const pulseSize = Math.sin(time * 10) * 2;
+      visual.effectsGraphics.lineStyle(2, 0x00ffff, 0.6);
+      visual.effectsGraphics.strokeCircle(0, 0, 18 + pulseSize);
       
-      // 채굴 스파크 (랜덤 위치에 작은 점들)
-      visual.graphics.fillStyle(0x00ffff, 0.8);
+      // 채굴 스파크
+      visual.effectsGraphics.fillStyle(0x00ffff, 0.8);
       for (let i = 0; i < 3; i++) {
         const sparkAngle = time * 2 + i * 2.1;
-        const sparkDist = unitConfig.size + 8 + Math.sin(time * 3 + i) * 4;
+        const sparkDist = 22 + Math.sin(time * 3 + i) * 4;
         const sx = Math.cos(sparkAngle) * sparkDist;
         const sy = Math.sin(sparkAngle) * sparkDist;
-        visual.graphics.fillCircle(sx, sy, 2);
+        visual.effectsGraphics.fillCircle(sx, sy, 2);
       }
       
       // 채굴 진행도 표시
       const progress = gatherer.gatherTimer / gatherer.gatherTime;
-      const progWidth = unitConfig.size * 2;
-      const progY = unitConfig.size + 12;
-      visual.graphics.fillStyle(0x000000, 0.7);
-      visual.graphics.fillRect(-progWidth / 2, progY, progWidth, 3);
-      visual.graphics.fillStyle(0x00ffff, 1);
-      visual.graphics.fillRect(-progWidth / 2, progY, progWidth * progress, 3);
+      const progWidth = 30;
+      const progY = 20;
+      visual.effectsGraphics.fillStyle(0x000000, 0.7);
+      visual.effectsGraphics.fillRect(-progWidth / 2, progY, progWidth, 3);
+      visual.effectsGraphics.fillStyle(0x00ffff, 1);
+      visual.effectsGraphics.fillRect(-progWidth / 2, progY, progWidth * progress, 3);
     }
     
-    // 공격 효과 (ATTACKING 또는 쿨다운 중일 때)
+    // 공격 효과
     if (combat && (combat.state === CombatState.ATTACKING || combat.state === CombatState.CHASING)) {
-      const time = Date.now() / 100;
-      
-      // 공격 중 표시 - 붉은 테두리 펄스
       const attackPulse = 0.5 + Math.sin(time * 3) * 0.3;
-      visual.graphics.lineStyle(2, 0xff4400, attackPulse);
-      visual.graphics.strokeCircle(0, 0, unitConfig.size + 3);
+      visual.effectsGraphics.lineStyle(2, 0xff4400, attackPulse);
+      visual.effectsGraphics.strokeCircle(0, 0, 18);
       
       // 공격 쿨다운 시 머즐 플래시 효과
       if (combat.attackCooldown > 0 && combat.attackCooldown > 10) {
-        // 방금 공격함 - 섬광 효과
         const flashIntensity = combat.attackCooldown / 15;
-        visual.graphics.fillStyle(0xffff00, Math.min(0.8, flashIntensity));
-        visual.graphics.fillCircle(0, 0, unitConfig.size * 0.5);
-        
-        // 총구 화염 효과 (Marine)
-        if (unit.unitType === UnitType.MARINE) {
-          visual.graphics.fillStyle(0xff6600, Math.min(0.9, flashIntensity));
-          visual.graphics.fillCircle(unitConfig.size * 0.8, 0, 4);
-          visual.graphics.fillStyle(0xffff00, Math.min(0.7, flashIntensity * 0.8));
-          visual.graphics.fillCircle(unitConfig.size * 0.8, 0, 2);
-        }
+        visual.effectsGraphics.fillStyle(0xffff00, Math.min(0.8, flashIntensity));
+        visual.effectsGraphics.fillCircle(8, 0, 4);
       }
     }
     
-    // A-Move 중일 때 표시
+    // A-Move 표시
     if (combat?.state === CombatState.ATTACK_MOVING) {
-      const time = Date.now() / 200;
-      visual.graphics.lineStyle(2, 0xff8800, 0.6);
-      // 삼각형 화살표 (이동 + 공격)
-      const arrowSize = unitConfig.size + 6;
-      visual.graphics.beginPath();
-      visual.graphics.moveTo(arrowSize, 0);
-      visual.graphics.lineTo(arrowSize - 4, -4);
-      visual.graphics.lineTo(arrowSize - 4, 4);
-      visual.graphics.closePath();
-      visual.graphics.fillStyle(0xff8800, 0.5 + Math.sin(time) * 0.3);
-      visual.graphics.fillPath();
+      visual.effectsGraphics.lineStyle(2, 0xff8800, 0.6);
+      visual.effectsGraphics.beginPath();
+      visual.effectsGraphics.moveTo(16, 0);
+      visual.effectsGraphics.lineTo(12, -4);
+      visual.effectsGraphics.lineTo(12, 4);
+      visual.effectsGraphics.closePath();
+      visual.effectsGraphics.fillStyle(0xff8800, 0.5 + Math.sin(time * 5) * 0.3);
+      visual.effectsGraphics.fillPath();
     }
-
-    // 라벨
-    visual.label.setText(unitConfig.label);
-    visual.label.setVisible(true);
+    
+    // 이동 방향 표시
+    if (movement?.isMoving && movement.targetX !== null && movement.targetY !== null) {
+      const angle = Math.atan2(movement.targetY - position.y, movement.targetX - position.x);
+      visual.sprite.setRotation(angle + Math.PI / 2); // 스프라이트 방향 조정
+    } else {
+      visual.sprite.setRotation(0);
+    }
+    
+    // 시즈 모드 효과
+    if (unit.unitType === UnitType.SIEGE_TANK && unit.isSieged) {
+      const siegePulse = 0.3 + Math.sin(time * 2) * 0.15;
+      visual.effectsGraphics.lineStyle(2, 0xff4400, siegePulse);
+      visual.effectsGraphics.strokeCircle(0, 0, 25);
+    }
 
     // 선택 원
     visual.selectionCircle.clear();
     if (selectable?.isSelected) {
       const selColor = playerId === this.localPlayerId ? 0x00ff00 : 0xff0000;
       visual.selectionCircle.lineStyle(2, selColor, 1);
-      visual.selectionCircle.strokeCircle(0, 0, unitConfig.size + 4);
+      visual.selectionCircle.strokeCircle(0, 0, 18);
       
       // 선택 시 깜빡임 효과
       visual.selectionCircle.lineStyle(1, 0xffffff, 0.5);
-      visual.selectionCircle.strokeCircle(0, 0, unitConfig.size + 6);
+      visual.selectionCircle.strokeCircle(0, 0, 20);
     }
 
-    // HP 바 (항상 표시, 데미지 받았거나 선택됐을 때 더 진하게)
+    // HP 바
     visual.hpBar.clear();
     const hpPercent = unit.getHpPercent();
-    const barWidth = unitConfig.size * 2 + 4;
+    const barWidth = 30;
     const barHeight = 3;
-    const yOffset = -unitConfig.size - 8;
+    const yOffset = -22;
 
     const showHp = selectable?.isSelected || hpPercent < 1;
     const alpha = showHp ? 1 : 0.5;
@@ -497,17 +361,17 @@ export class UnitRenderer {
   }
 
   private setVisualVisible(visual: UnitVisual, visible: boolean): void {
-    visual.graphics.setVisible(visible);
+    visual.sprite.setVisible(visible);
     visual.selectionCircle.setVisible(visible);
     visual.hpBar.setVisible(visible);
-    visual.label.setVisible(visible);
+    visual.effectsGraphics.setVisible(visible);
   }
 
   private destroyVisual(visual: UnitVisual): void {
-    visual.graphics.destroy();
+    visual.sprite.destroy();
     visual.selectionCircle.destroy();
     visual.hpBar.destroy();
-    visual.label.destroy();
+    visual.effectsGraphics.destroy();
   }
 
   destroy(): void {
@@ -515,9 +379,10 @@ export class UnitRenderer {
       this.destroyVisual(visual);
     }
     this.visuals.clear();
+    this.hoverGraphics?.destroy();
   }
 
-  getSprite(entityId: number): Phaser.GameObjects.Graphics | undefined {
-    return this.visuals.get(entityId)?.graphics;
+  getSprite(entityId: number): Phaser.GameObjects.Sprite | undefined {
+    return this.visuals.get(entityId)?.sprite;
   }
 }
