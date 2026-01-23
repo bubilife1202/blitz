@@ -51,8 +51,45 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // 맵 타일맵 데이터 미리 생성 (128x128)
+    this.generateMapTileset();
+    
     // 메뉴 씬으로 전환
     this.scene.start('MenuScene');
+  }
+  
+  // 맵용 타일셋 텍스처 미리 생성
+  private generateMapTileset(): void {
+    console.time('BootScene: generateMapTileset');
+    
+    // Kenney 타일 프레임들을 하나의 타일셋 텍스처로 합치기
+    const tileSize = 32;
+    const tileFrames = [
+      'scifiTile_01.png', 'scifiTile_02.png', 'scifiTile_03.png', 'scifiTile_04.png', 
+      'scifiTile_05.png', 'scifiTile_06.png', 'scifiTile_07.png', 'scifiTile_10.png',
+      'scifiTile_13.png', 'scifiTile_14.png', 'scifiTile_15.png', 'scifiTile_16.png',
+      'scifiTile_17.png', 'scifiTile_18.png', 'scifiTile_19.png', 'scifiTile_20.png',
+      'scifiTile_21.png', 'scifiTile_27.png', 'scifiTile_28.png', 'scifiTile_29.png',
+      'scifiTile_30.png', 'scifiTile_31.png', 'scifiTile_32.png', 'scifiTile_33.png',
+      'scifiTile_34.png', 'scifiTile_35.png', 'scifiTile_41.png', 'scifiTile_42.png'
+    ];
+    
+    // 타일셋 텍스처 생성 (가로로 나열: 28개 × 32px = 896px)
+    const tilesetWidth = tileFrames.length * tileSize;
+    const rt = this.make.renderTexture({ x: 0, y: 0, width: tilesetWidth, height: tileSize }, false);
+    
+    for (let i = 0; i < tileFrames.length; i++) {
+      rt.drawFrame('scifi', tileFrames[i], i * tileSize, 0);
+    }
+    
+    // 'map_tileset' 텍스처로 저장
+    rt.saveTexture('map_tileset');
+    rt.destroy();
+    
+    // 타일 인덱스 정보를 레지스트리에 저장
+    this.registry.set('mapTileCount', tileFrames.length);
+    
+    console.timeEnd('BootScene: generateMapTileset');
   }
 
   // Kenney Sci-Fi RTS 에셋 로딩

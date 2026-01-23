@@ -29,6 +29,9 @@ export class VisionSystem extends System {
   private mapHeight: number = 0;
   private tileSize: number = 32;
 
+  private revealAll: boolean = false;
+  private showExplored: boolean = true;
+
   init(gameState: GameState): void {
     super.init(gameState);
     
@@ -109,6 +112,10 @@ export class VisionSystem extends System {
 
   // 특정 타일의 가시성 확인
   getVisibility(playerId: number, tileX: number, tileY: number): VisibilityState {
+    if (this.revealAll) {
+      return VisibilityState.VISIBLE;
+    }
+
     if (tileX < 0 || tileX >= this.mapWidth || tileY < 0 || tileY >= this.mapHeight) {
       return VisibilityState.HIDDEN;
     }
@@ -121,7 +128,7 @@ export class VisionSystem extends System {
       return VisibilityState.VISIBLE;
     }
     if (exploredMap && exploredMap[index] === VisibilityState.EXPLORED) {
-      return VisibilityState.EXPLORED;
+      return this.showExplored ? VisibilityState.EXPLORED : VisibilityState.HIDDEN;
     }
     return VisibilityState.HIDDEN;
   }
@@ -148,5 +155,21 @@ export class VisionSystem extends System {
       height: this.mapHeight,
       tileSize: this.tileSize,
     };
+  }
+
+  setRevealAll(enabled: boolean): void {
+    this.revealAll = enabled;
+  }
+
+  setShowExplored(enabled: boolean): void {
+    this.showExplored = enabled;
+  }
+
+  isRevealAll(): boolean {
+    return this.revealAll;
+  }
+
+  isShowExplored(): boolean {
+    return this.showExplored;
   }
 }

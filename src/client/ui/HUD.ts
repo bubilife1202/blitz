@@ -55,6 +55,10 @@ export class HUD {
     this.createUI();
   }
 
+  setLocalPlayerId(playerId: number): void {
+    this.localPlayerId = playerId;
+  }
+
   private createUI(): void {
     const width = this.scene.scale.width;
     const height = this.scene.scale.height;
@@ -67,6 +71,7 @@ export class HUD {
     this.createResourcePanel(width);
 
     // 선택 패널 (하단 중앙-좌측, 미니맵 옆)
+    // 미니맵이 200x200이므로 x=220은 적절, 높이를 조금 키움
     this.createSelectionPanel(height);
 
     // 커맨드 패널 (하단 우측)
@@ -77,22 +82,25 @@ export class HUD {
     this.resourcePanel = this.scene.add.container(0, 0);
 
     // 베벨 배경 (3D 효과)
-    const bgHeight = 36;
+    const bgHeight = 44; // 36 -> 44
     const bg = this.scene.add.rectangle(width / 2, bgHeight / 2, width, bgHeight, 0x1a1a2e, 0.95);
     const topEdge = this.scene.add.rectangle(width / 2, 1, width, 2, 0x3a3a5e);
     const bottomEdge = this.scene.add.rectangle(width / 2, bgHeight - 1, width, 2, 0x0a0a1a);
     this.resourcePanel.add([bg, topEdge, bottomEdge]);
 
+    const startX = 140; // 시작 위치 조정
+    const gap = 140;    // 간격 넓힘
+
     // 미네랄 (다이아몬드 아이콘)
     const mineralGfx = this.scene.add.graphics();
     mineralGfx.fillStyle(0x00ffff, 1);
-    mineralGfx.fillTriangle(100, 10, 90, 20, 100, 30); // 왼쪽
+    mineralGfx.fillTriangle(startX, 14, startX - 10, 24, startX, 34); // 왼쪽
     mineralGfx.fillStyle(0x00cccc, 1);
-    mineralGfx.fillTriangle(100, 10, 110, 20, 100, 30); // 오른쪽
+    mineralGfx.fillTriangle(startX, 14, startX + 10, 24, startX, 34); // 오른쪽
     mineralGfx.fillStyle(0x00eeee, 1);
-    mineralGfx.fillTriangle(100, 10, 95, 20, 105, 20); // 상단
-    this.mineralText = this.scene.add.text(125, 11, '50', {
-      fontSize: '16px',
+    mineralGfx.fillTriangle(startX, 14, startX - 5, 24, startX + 5, 24); // 상단
+    this.mineralText = this.scene.add.text(startX + 20, 14, '50', {
+      fontSize: '18px', // 16px -> 18px
       color: '#00ffff',
       fontStyle: 'bold',
       shadow: { offsetX: 1, offsetY: 1, color: '#003333', blur: 2, fill: true }
@@ -100,15 +108,16 @@ export class HUD {
     this.resourcePanel.add([mineralGfx, this.mineralText]);
 
     // 가스 (원형 + 연기 효과)
+    const gasX = startX + gap;
     const gasGfx = this.scene.add.graphics();
     gasGfx.fillStyle(0x00aa00, 1);
-    gasGfx.fillCircle(250, 18, 10);
+    gasGfx.fillCircle(gasX, 24, 12);
     gasGfx.fillStyle(0x00ff00, 0.6);
-    gasGfx.fillCircle(250, 18, 6);
+    gasGfx.fillCircle(gasX, 24, 8);
     gasGfx.fillStyle(0x88ff88, 0.4);
-    gasGfx.fillCircle(248, 15, 3);
-    this.gasText = this.scene.add.text(270, 11, '0', {
-      fontSize: '16px',
+    gasGfx.fillCircle(gasX - 2, 21, 4);
+    this.gasText = this.scene.add.text(gasX + 20, 14, '0', {
+      fontSize: '18px', // 16px -> 18px
       color: '#00ff00',
       fontStyle: 'bold',
       shadow: { offsetX: 1, offsetY: 1, color: '#003300', blur: 2, fill: true }
@@ -116,15 +125,16 @@ export class HUD {
     this.resourcePanel.add([gasGfx, this.gasText]);
 
     // 서플라이 (사람 아이콘)
+    const supplyX = gasX + gap;
     const supplyGfx = this.scene.add.graphics();
     supplyGfx.fillStyle(0xffcc00, 1);
-    supplyGfx.fillCircle(400, 12, 5); // 머리
-    supplyGfx.fillRect(397, 17, 6, 10); // 몸통
+    supplyGfx.fillCircle(supplyX, 18, 6); // 머리
+    supplyGfx.fillRect(supplyX - 3, 23, 7, 12); // 몸통
     supplyGfx.fillStyle(0xffaa00, 1);
-    supplyGfx.fillRect(393, 19, 4, 6); // 왼팔
-    supplyGfx.fillRect(403, 19, 4, 6); // 오른팔
-    this.supplyText = this.scene.add.text(420, 11, '0/10', {
-      fontSize: '16px',
+    supplyGfx.fillRect(supplyX - 7, 25, 4, 8); // 왼팔
+    supplyGfx.fillRect(supplyX + 4, 25, 4, 8); // 오른팔
+    this.supplyText = this.scene.add.text(supplyX + 20, 14, '0/10', {
+      fontSize: '18px', // 16px -> 18px
       color: '#ffcc00',
       fontStyle: 'bold',
       shadow: { offsetX: 1, offsetY: 1, color: '#333300', blur: 2, fill: true }
@@ -136,9 +146,10 @@ export class HUD {
 
   private createSelectionPanel(height: number): void {
     // 미니맵(200x200) 오른쪽에 배치
-    this.selectionPanel = this.scene.add.container(220, height - 150);
+    const panelH = 160; // 140 -> 160
+    this.selectionPanel = this.scene.add.container(220, height - panelH - 10);
 
-    const w = 280, h = 140;
+    const w = 320, h = panelH; // 280 -> 320
     
     // 베벨 프레임 배경
     const bg = this.scene.add.rectangle(0, 0, w, h, 0x0d1117, 0.95);
@@ -164,11 +175,12 @@ export class HUD {
     this.selectionPanel.add([bg, bevelGfx]);
 
     // 선택 정보
-    this.selectionInfo = this.scene.add.text(10, 10, 'No selection', {
-      fontSize: '14px',
+    this.selectionInfo = this.scene.add.text(12, 12, 'No selection', {
+      fontSize: '16px', // 14px -> 16px
       color: '#c0c0c0',
-      wordWrap: { width: 260 },
-      shadow: { offsetX: 1, offsetY: 1, color: '#000000', blur: 1, fill: true }
+      wordWrap: { width: w - 24 },
+      shadow: { offsetX: 1, offsetY: 1, color: '#000000', blur: 1, fill: true },
+      lineSpacing: 4 // 줄 간격 추가
     });
     this.selectionPanel.add(this.selectionInfo);
 
@@ -176,10 +188,9 @@ export class HUD {
   }
 
   private createCommandPanel(width: number, height: number): void {
-    this.commandPanel = this.scene.add.container(width - 250, height - 150);
+    const w = 260, h = 160; // 240, 140 -> 260, 160
+    this.commandPanel = this.scene.add.container(width - w - 10, height - h - 10);
 
-    const w = 240, h = 140;
-    
     // 베벨 프레임 배경
     const bg = this.scene.add.rectangle(0, 0, w, h, 0x0d1117, 0.95);
     bg.setOrigin(0, 0);
@@ -337,11 +348,11 @@ export class HUD {
 
   // 멀티 선택 유닛 그리드 생성
   private createSelectionGrid(entities: Entity[]): void {
-    const startX = 10;
-    const startY = 50;
-    const boxSize = 12;
+    const startX = 12;
+    const startY = 60; // 텍스트 영역 확보
+    const boxSize = 16; // 12 -> 16
     const padding = 4;
-    const cols = 12;
+    const cols = 14;    // 12 -> 14
 
     entities.forEach((entity, index) => {
       const col = index % cols;
@@ -548,11 +559,11 @@ export class HUD {
     completedUpgrades: UpgradeType[],
     config: Partial<Record<UpgradeType, { label: string; key: string }>>
   ): void {
-    const buttonW = 70;
-    const buttonH = 32;
-    const padding = 4;
-    const startX = 8;
-    const startY = 8;
+    const buttonW = 74; // 70 -> 74
+    const buttonH = 34; // 32 -> 34
+    const padding = 6;  // 4 -> 6
+    const startX = 10;  // 8 -> 10
+    const startY = 10;  // 8 -> 10
     const cols = 3;
 
     upgrades.forEach((upgradeType, index) => {
@@ -580,14 +591,14 @@ export class HUD {
       const label = config[upgradeType]?.label || upgradeType;
       const key = config[upgradeType]?.key || '';
 
-      const labelText = this.scene.add.text(x + 4, y + 3, `[${key}] ${label}`, {
-        fontSize: '8px',
+      const labelText = this.scene.add.text(x + 4, y + 4, `[${key}] ${label}`, {
+        fontSize: '10px', // 8px -> 10px
         color: available ? '#ffffff' : '#666666',
       });
 
       const costStr = stats.gasCost > 0 ? `${stats.mineralCost}/${stats.gasCost}` : `${stats.mineralCost}`;
       const costText = this.scene.add.text(x + buttonW - 4, y + buttonH - 4, costStr, {
-        fontSize: '8px',
+        fontSize: '10px', // 8px -> 10px
         color: canAfford ? '#88ccff' : '#ff6666',
       });
       costText.setOrigin(1, 1);
@@ -616,11 +627,11 @@ export class HUD {
     playerBuildings: BuildingType[],
     mode: 'build' | 'train'
   ): void {
-    const buttonW = 70;
-    const buttonH = 32;
-    const padding = 4;
-    const startX = 8;
-    const startY = 8;
+    const buttonW = 74; // 70 -> 74
+    const buttonH = 34; // 32 -> 34
+    const padding = 6;  // 4 -> 6
+    const startX = 10;  // 8 -> 10
+    const startY = 10;  // 8 -> 10
     const cols = 3;
 
     options.forEach((opt, index) => {
@@ -656,14 +667,14 @@ export class HUD {
       button.setStrokeStyle(1, borderColor);
       if (available) button.setInteractive({ useHandCursor: true });
 
-      const labelText = this.scene.add.text(x + 4, y + 3, `[${opt.key}] ${opt.label}`, {
-        fontSize: '9px',
+      const labelText = this.scene.add.text(x + 4, y + 4, `[${opt.key}] ${opt.label}`, {
+        fontSize: '11px', // 9px -> 11px
         color: available ? '#ffffff' : '#666666',
       });
 
       const costStr = cost.gas > 0 ? `${cost.minerals}/${cost.gas}` : `${cost.minerals}`;
       const costText = this.scene.add.text(x + buttonW - 4, y + buttonH - 4, costStr, {
-        fontSize: '8px',
+        fontSize: '10px', // 8px -> 10px
         color: canAfford ? '#00ffff' : '#ff6666',
       });
       costText.setOrigin(1, 1);
@@ -692,10 +703,10 @@ export class HUD {
 
   // Siege 버튼
   private showSiegeButton(isSieged: boolean): void {
-    const x = 160;
-    const y = 100;
-    const buttonW = 70;
-    const buttonH = 28;
+    const x = 166; // 160 -> 166
+    const y = 110; // 100 -> 110
+    const buttonW = 74; // 70 -> 74
+    const buttonH = 34; // 28 -> 34
 
     const button = this.scene.add.rectangle(x, y, buttonW, buttonH, 0x664400);
     button.setOrigin(0, 0);
@@ -703,7 +714,7 @@ export class HUD {
     button.setInteractive({ useHandCursor: true });
 
     const text = this.scene.add.text(x + buttonW / 2, y + buttonH / 2, isSieged ? '[O] Unsiege' : '[O] Siege', {
-      fontSize: '10px',
+      fontSize: '12px', // 10px -> 12px
       color: '#ffffff',
     });
     text.setOrigin(0.5);
@@ -722,10 +733,10 @@ export class HUD {
 
   // Stim 버튼
   private showStimButton(): void {
-    const x = 160;
-    const y = 100;
-    const buttonW = 70;
-    const buttonH = 28;
+    const x = 166;
+    const y = 110;
+    const buttonW = 74;
+    const buttonH = 34;
 
     const button = this.scene.add.rectangle(x, y, buttonW, buttonH, 0x660044);
     button.setOrigin(0, 0);
@@ -733,7 +744,7 @@ export class HUD {
     button.setInteractive({ useHandCursor: true });
 
     const text = this.scene.add.text(x + buttonW / 2, y + buttonH / 2, '[T] Stim', {
-      fontSize: '10px',
+      fontSize: '12px',
       color: '#ffffff',
     });
     text.setOrigin(0.5);

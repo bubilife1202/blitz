@@ -24,6 +24,7 @@ export class LocalHost {
   private gameState: GameState;
   private pathfinding: PathfindingService | null;
   private aiCount: number = 1;
+  private humanPlayers: Set<number> = new Set([1]);
 
   constructor(gameState: GameState, pathfinding?: PathfindingService) {
     this.gameState = gameState;
@@ -32,6 +33,10 @@ export class LocalHost {
 
   setAICount(count: number): void {
     this.aiCount = Math.min(3, Math.max(1, count));
+  }
+
+  setHumanPlayers(ids: number[]): void {
+    this.humanPlayers = new Set(ids);
   }
 
   getAICount(): number {
@@ -60,20 +65,17 @@ export class LocalHost {
       { dx: -4, dy: 7 },   // 좌하단용
     ];
 
-    // 플레이어 1 자원 초기화
-    this.gameState.modifyPlayerResources(1, { 
-      minerals: 200,
-      supply: 8,
-      supplyMax: 18
-    });
-
-    // AI 플레이어들 자원 초기화
+    const playerSlots: Array<{ id: number; positionIndex: number }> = [{ id: 1, positionIndex: 0 }];
     for (let i = 0; i < this.aiCount; i++) {
-      const aiPlayerId = 2 + i;
-      this.gameState.modifyPlayerResources(aiPlayerId, { 
+      playerSlots.push({ id: 2 + i, positionIndex: i + 1 });
+    }
+
+    for (const slot of playerSlots) {
+      const isHuman = this.humanPlayers.has(slot.id);
+      this.gameState.modifyPlayerResources(slot.id, {
         minerals: 200,
-        supply: 6,
-        supplyMax: 10
+        supply: isHuman ? 8 : 6,
+        supplyMax: isHuman ? 18 : 10,
       });
     }
 
@@ -82,13 +84,15 @@ export class LocalHost {
       this.pathfinding.beginBatch();
     }
 
-    // ====== 플레이어 1 (좌측 상단) ======
-    this.setupPlayerBase(1, startPositions[0], mineralOffsets[0], tileSize, true);
-
-    // ====== AI 플레이어들 ======
-    for (let i = 0; i < this.aiCount; i++) {
-      const aiPlayerId = 2 + i;
-      this.setupPlayerBase(aiPlayerId, startPositions[i + 1], mineralOffsets[i + 1], tileSize, false);
+    for (const slot of playerSlots) {
+      const isHuman = this.humanPlayers.has(slot.id);
+      this.setupPlayerBase(
+        slot.id,
+        startPositions[slot.positionIndex],
+        mineralOffsets[slot.positionIndex],
+        tileSize,
+        isHuman
+      );
     }
 
     // 배치 모드 종료

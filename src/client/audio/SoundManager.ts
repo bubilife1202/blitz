@@ -27,6 +27,7 @@ export class SoundManager {
   private masterGain: GainNode | null = null;
   private enabled: boolean = true;
   private volume: number = 0.3;
+  private ambientNodes: { osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null = null;
 
   constructor() {
     this.initAudioContext();
@@ -60,6 +61,40 @@ export class SoundManager {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
+  }
+
+  startAmbient(): void {
+    if (!this.enabled || !this.audioContext || !this.masterGain) return;
+    if (this.ambientNodes) return;
+
+    const ctx = this.audioContext;
+    const gain = ctx.createGain();
+    gain.connect(this.masterGain);
+    gain.gain.value = 0.04;
+
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'sine';
+    osc1.frequency.value = 46;
+
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'triangle';
+    osc2.frequency.value = 72;
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+
+    osc1.start();
+    osc2.start();
+
+    this.ambientNodes = { osc1, osc2, gain };
+  }
+
+  stopAmbient(): void {
+    if (!this.ambientNodes) return;
+    this.ambientNodes.osc1.stop();
+    this.ambientNodes.osc2.stop();
+    this.ambientNodes.gain.disconnect();
+    this.ambientNodes = null;
   }
 
   play(type: SoundType): void {

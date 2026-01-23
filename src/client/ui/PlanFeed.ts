@@ -3,16 +3,24 @@
 // ==========================================
 
 import Phaser from 'phaser';
-import type { PlanSnapshot, PlanAction, ApprovalRequest, DirectorLog } from '@core/PlayerDirector';
+import type { PlanSnapshot, PlanAction, ApprovalRequest } from '@core/PlayerDirector';
 
 export class PlanFeed {
   private scene: Phaser.Scene;
   private container!: Phaser.GameObjects.Container;
   
   // UI 요소
+  private background!: Phaser.GameObjects.Rectangle;
+  private contentContainer!: Phaser.GameObjects.Container;
+  private collapseIcon!: Phaser.GameObjects.Text;
   private actionCards: Phaser.GameObjects.Container[] = [];
   private approvalCard: Phaser.GameObjects.Container | null = null;
-  private logTexts: Phaser.GameObjects.Text[] = [];
+  
+  // 접기 상태
+  private isCollapsed = false;
+  private readonly panelW = 200;
+  private readonly panelH = 180;
+  private readonly headerH = 28;
   
   // 콜백
   public onApprovalResponse?: (requestId: string, optionId: string) => void;
@@ -26,42 +34,69 @@ export class PlanFeed {
     const width = this.scene.scale.width;
     
     // 우측 상단에 배치
-    this.container = this.scene.add.container(width - 200, 50);
+    this.container = this.scene.add.container(width - this.panelW - 10, 10);
     this.container.setScrollFactor(0);
     this.container.setDepth(3100);
     
-    const panelW = 190;
-    const panelH = 280;
-    
     // 배경
-    const bg = this.scene.add.rectangle(0, 0, panelW, panelH, 0x0a1628, 0.9);
-    bg.setOrigin(0, 0);
-    bg.setStrokeStyle(2, 0x1a3a5a);
-    this.container.add(bg);
+    this.background = this.scene.add.rectangle(0, 0, this.panelW, this.panelH, 0x0a1628, 0.9);
+    this.background.setOrigin(0, 0);
+    this.background.setStrokeStyle(2, 0x1a3a5a);
+    this.container.add(this.background);
+    
+    // 헤더 (클릭으로 접기/펼치기)
+    const header = this.scene.add.rectangle(0, 0, this.panelW, this.headerH, 0x1a3a5a, 1);
+    header.setOrigin(0, 0);
+    header.setInteractive({ useHandCursor: true });
+    this.container.add(header);
     
     // 타이틀
-    const title = this.scene.add.text(panelW / 2, 8, '[ AI 계획 ]', {
-      fontSize: '12px',
+    const title = this.scene.add.text(10, this.headerH / 2, '[ AI 계획 ]', {
+      fontSize: '13px',
       color: '#4a9eff',
       fontStyle: 'bold',
     });
-    title.setOrigin(0.5, 0);
+    title.setOrigin(0, 0.5);
     this.container.add(title);
     
-    // 구분선
-    const divider1 = this.scene.add.rectangle(panelW / 2, 28, panelW - 20, 1, 0x2a4a6a);
-    this.container.add(divider1);
-    
-    // 로그 영역 라벨
-    const logLabel = this.scene.add.text(10, 180, '최근 활동', {
-      fontSize: '9px',
-      color: '#666666',
+    // 접기 아이콘
+    this.collapseIcon = this.scene.add.text(this.panelW - 20, this.headerH / 2, '▼', {
+      fontSize: '12px',
+      color: '#4a9eff',
     });
-    this.container.add(logLabel);
+    this.collapseIcon.setOrigin(0.5);
+    this.container.add(this.collapseIcon);
     
-    // 구분선 2
-    const divider2 = this.scene.add.rectangle(panelW / 2, 195, panelW - 20, 1, 0x2a4a6a);
-    this.container.add(divider2);
+    // 헤더 클릭 이벤트
+    header.on('pointerdown', () => this.toggleCollapse());
+    header.on('pointerover', () => header.setFillStyle(0x2a4a6a));
+    header.on('pointerout', () => header.setFillStyle(0x1a3a5a));
+    
+    // 컨텐츠 컨테이너
+    this.contentContainer = this.scene.add.container(0, this.headerH);
+    this.container.add(this.contentContainer);
+  }
+  
+  private toggleCollapse(): void {
+    this.isCollapsed = !this.isCollapsed;
+    
+    if (this.isCollapsed) {
+      this.contentContainer.setVisible(false);
+      this.background.setSize(this.panelW, this.headerH);
+      this.collapseIcon.setText('▲');
+    } else {
+      this.contentContainer.setVisible(true);
+      this.background.setSize(this.panelW, this.panelH);
+      this.collapseIcon.setText('▼');
+    }
+  }
+  
+  isCollapsedState(): boolean {
+    return this.isCollapsed;
+  }
+  
+  getHeight(): number {
+    return this.isCollapsed ? this.headerH : this.panelH;
   }
 
   update(snapshot: PlanSnapshot): void {
@@ -70,27 +105,24 @@ export class PlanFeed {
     
     if (!snapshot.enabled) {
       // 비활성화 상태
-      const offText = this.scene.add.text(95, 100, '감독 모드 OFF', {
-        fontSize: '12px',
+      const offText = this.scene.add.text(this.panelW / 2, 60, '감독 모드 OFF', {
+        fontSize: '13px',
         color: '#555555',
       });
       offText.setOrigin(0.5);
-      this.container.add(offText);
+      this.contentContainer.add(offText);
       this.actionCards.push(this.createTempContainer(offText));
       return;
     }
     
     // 승인 요청 표시 (있으면)
     if (snapshot.approvalRequest) {
-      this.renderApprovalCard(snapshot.approvalRequest, 35);
+      this.renderApprovalCard(snapshot.approvalRequest, 8);
     }
     
     // 액션 카드 표시
-    const startY = snapshot.approvalRequest ? 95 : 35;
+    const startY = snapshot.approvalRequest ? 90 : 8;
     this.renderActionCards(snapshot.nextActions, startY);
-    
-    // 로그 표시
-    this.renderLogs(snapshot.recentLogs);
   }
 
   private clearDynamicElements(): void {
@@ -103,11 +135,6 @@ export class PlanFeed {
       this.approvalCard.destroy();
       this.approvalCard = null;
     }
-    
-    for (const text of this.logTexts) {
-      text.destroy();
-    }
-    this.logTexts = [];
   }
 
   private createTempContainer(...objects: Phaser.GameObjects.GameObject[]): Phaser.GameObjects.Container {
@@ -119,8 +146,8 @@ export class PlanFeed {
   }
 
   private renderApprovalCard(request: ApprovalRequest, y: number): void {
-    const cardW = 170;
-    const cardH = 70; // 더 크게
+    const cardW = 180;
+    const cardH = 76;
     const x = 10;
     
     const container = this.scene.add.container(x, y);
@@ -128,12 +155,12 @@ export class PlanFeed {
     // 배경 (강조)
     const bg = this.scene.add.rectangle(0, 0, cardW, cardH, 0x442200, 0.95);
     bg.setOrigin(0, 0);
-    bg.setStrokeStyle(3, 0xff8800);
+    bg.setStrokeStyle(2, 0xff8800);
     container.add(bg);
     
     // 제목
-    const title = this.scene.add.text(cardW / 2, 8, `⚠ ${request.title}`, {
-      fontSize: '12px',
+    const title = this.scene.add.text(cardW / 2, 6, `⚠ ${request.title}`, {
+      fontSize: '11px',
       color: '#ffaa00',
       fontStyle: 'bold',
     });
@@ -141,39 +168,49 @@ export class PlanFeed {
     container.add(title);
     
     // 설명
-    const desc = this.scene.add.text(cardW / 2, 26, request.description, {
-      fontSize: '9px',
+    const desc = this.scene.add.text(cardW / 2, 22, request.description, {
+      fontSize: '10px',
       color: '#cccccc',
-      wordWrap: { width: cardW - 20 },
+      wordWrap: { width: cardW - 16 },
       align: 'center',
     });
     desc.setOrigin(0.5, 0);
     container.add(desc);
     
-    // 버튼들 - 더 크고 눈에 띄게
-    const btnW = 70;
-    const btnH = 24;
-    const btnY = cardH - btnH - 8;
-    const totalBtnWidth = request.options.length * btnW + (request.options.length - 1) * 10;
+    // 버튼들
+    const btnH = 22;
+    const btnY = cardH - btnH - 6;
+    
+    const optionCount = request.options.length;
+    let btnW = 70;
+    let gap = 8;
+    let fontSize = '10px';
+
+    if (optionCount >= 3) {
+      gap = 4;
+      btnW = Math.floor((cardW - (gap * (optionCount - 1)) - 8) / optionCount);
+      fontSize = '9px';
+    }
+
+    const totalBtnWidth = optionCount * btnW + (optionCount - 1) * gap;
     const startX = (cardW - totalBtnWidth) / 2;
     
     request.options.forEach((opt, i) => {
-      const btnX = startX + i * (btnW + 10);
+      const btnX = startX + i * (btnW + gap);
       const isApprove = opt.id === 'approve';
       
-      // 버튼을 scene에 직접 추가하고 depth 높게 설정
       const worldX = this.container.x + x + btnX;
-      const worldY = this.container.y + y + btnY;
+      const worldY = this.container.y + this.headerH + y + btnY;
       
       const btn = this.scene.add.rectangle(worldX, worldY, btnW, btnH, isApprove ? 0x227722 : 0x772222);
       btn.setOrigin(0, 0);
       btn.setStrokeStyle(2, isApprove ? 0x44ff44 : 0xff4444);
       btn.setInteractive({ useHandCursor: true });
       btn.setScrollFactor(0);
-      btn.setDepth(3200); // 높은 depth
+      btn.setDepth(3200);
       
       const btnText = this.scene.add.text(worldX + btnW / 2, worldY + btnH / 2, opt.label, {
-        fontSize: '12px',
+        fontSize: fontSize,
         color: '#ffffff',
         fontStyle: 'bold',
       });
@@ -191,22 +228,20 @@ export class PlanFeed {
       });
       btn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
         pointer.event.stopPropagation();
-        console.log('Approval button clicked:', opt.id);
         this.onApprovalResponse?.(request.id, opt.id);
       });
       
-      // 버튼은 별도로 추적 (container 밖)
       this.actionCards.push(this.createTempContainer(btn, btnText));
     });
     
-    this.container.add(container);
+    this.contentContainer.add(container);
     this.approvalCard = container;
   }
 
   private renderActionCards(actions: PlanAction[], startY: number): void {
-    const cardW = 170;
-    const cardH = 28;
-    const gap = 4;
+    const cardW = 190;
+    const cardH = 32;
+    const gap = 6;
     
     actions.slice(0, 4).forEach((action, i) => {
       const y = startY + i * (cardH + gap);
@@ -221,16 +256,16 @@ export class PlanFeed {
       
       // 아이콘
       const icon = this.getActionIcon(action.type);
-      const iconText = this.scene.add.text(5, cardH / 2, icon, {
-        fontSize: '12px',
+      const iconText = this.scene.add.text(8, cardH / 2, icon, {
+        fontSize: '14px',
         color: '#ffffff',
       });
       iconText.setOrigin(0, 0.5);
       container.add(iconText);
       
       // 설명
-      const descText = this.scene.add.text(22, cardH / 2, action.description, {
-        fontSize: '10px',
+      const descText = this.scene.add.text(28, cardH / 2, action.description, {
+        fontSize: '11px',
         color: '#ffffff',
       });
       descText.setOrigin(0, 0.5);
@@ -238,38 +273,19 @@ export class PlanFeed {
       
       // 진행률 (있으면)
       if (action.progress !== undefined) {
-        const progressW = cardW - 30;
+        const progressW = cardW - 36;
         const progressH = 3;
-        const progressBg = this.scene.add.rectangle(25, cardH - 5, progressW, progressH, 0x333333);
+        const progressBg = this.scene.add.rectangle(30, cardH - 6, progressW, progressH, 0x333333);
         progressBg.setOrigin(0, 0.5);
         container.add(progressBg);
         
-        const progressFill = this.scene.add.rectangle(25, cardH - 5, progressW * (action.progress / 100), progressH, 0x44aaff);
+        const progressFill = this.scene.add.rectangle(30, cardH - 6, progressW * (action.progress / 100), progressH, 0x44aaff);
         progressFill.setOrigin(0, 0.5);
         container.add(progressFill);
       }
       
       this.container.add(container);
       this.actionCards.push(container);
-    });
-  }
-
-  private renderLogs(logs: DirectorLog[]): void {
-    const startY = 205;
-    const lineH = 14;
-    
-    logs.slice(0, 5).forEach((log, i) => {
-      const y = startY + i * lineH;
-      const color = log.type === 'action' ? '#44aaff' : 
-                    log.type === 'warning' ? '#ffaa44' : '#888888';
-      
-      const text = this.scene.add.text(10, y, `• ${log.message}`, {
-        fontSize: '9px',
-        color,
-      });
-      
-      this.container.add(text);
-      this.logTexts.push(text);
     });
   }
 

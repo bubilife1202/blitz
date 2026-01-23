@@ -276,6 +276,21 @@ export class SelectionManager {
     return Array.from(this.selectedEntities);
   }
 
+  // 스냅샷 로드 후 선택 상태 복구
+  syncSelection(): void {
+    const nextSelected: Set<EntityId> = new Set();
+    for (const id of this.selectedEntities) {
+      const entity = this.gameState.getEntity(id);
+      if (!entity) continue;
+      const selectable = entity.getComponent<Selectable>(Selectable);
+      if (selectable) {
+        selectable.select();
+        nextSelected.add(id);
+      }
+    }
+    this.selectedEntities = nextSelected;
+  }
+
   // 선택된 엔티티 목록
   getSelectedEntities(): Entity[] {
     const entities: Entity[] = [];

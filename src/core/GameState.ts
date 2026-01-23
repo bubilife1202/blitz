@@ -260,4 +260,58 @@ export class GameState {
       this.players.set(playerState.id, { ...playerState });
     }
   }
+
+  // 스냅샷을 기존 상태에 반영 (엔티티 재사용)
+  applySnapshot(snapshot: GameSnapshot): void {
+    this.currentTick = snapshot.tick;
+
+    const seenIds = new Set<EntityId>();
+
+    for (const entityData of snapshot.entities) {
+      seenIds.add(entityData.id);
+      let entity = this.entities.get(entityData.id);
+
+      if (!entity) {
+        entity = new Entity(entityData.id);
+        this.entities.set(entityData.id, entity);
+      }
+
+      const nextComponentTypes = Object.keys(entityData.components) as ComponentType[];
+      const existingTypes = entity.getComponentTypes();
+
+      for (const type of existingTypes) {
+        if (!nextComponentTypes.includes(type)) {
+          entity.removeComponent({ type } as { type: ComponentType });
+        }
+      }
+
+      for (const [type, componentData] of Object.entries(entityData.components)) {
+        const existingComponent = entity.getComponent({ type } as { type: ComponentType });
+        if (existingComponent) {
+          existingComponent.deserialize(componentData);
+        } else {
+          const component = createComponentFromData(type as ComponentType, componentData);
+          if (component) {
+            entity.addComponent(component);
+          }
+        }
+      }
+
+      if (entity.id >= this.nextEntityId) {
+        this.nextEntityId = entity.id + 1;
+      }
+    }
+
+    for (const [id, entity] of this.entities) {
+      if (!seenIds.has(id)) {
+        entity.destroy();
+        this.entities.delete(id);
+      }
+    }
+
+    this.players.clear();
+    for (const playerState of snapshot.players) {
+      this.players.set(playerState.id, { ...playerState });
+    }
+  }
 }

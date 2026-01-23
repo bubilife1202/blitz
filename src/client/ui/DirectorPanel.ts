@@ -10,17 +10,29 @@ export class DirectorPanel {
   private container!: Phaser.GameObjects.Container;
   
   // UI 요소
+  private background!: Phaser.GameObjects.Rectangle;
+  private contentContainer!: Phaser.GameObjects.Container;
   private enableToggle!: Phaser.GameObjects.Rectangle;
   private enableText!: Phaser.GameObjects.Text;
+  private mapRevealToggle!: Phaser.GameObjects.Rectangle;
+  private mapRevealText!: Phaser.GameObjects.Text;
   private strategyContainer!: Phaser.GameObjects.Container;
   private currentStrategyText!: Phaser.GameObjects.Text;
   private statsText!: Phaser.GameObjects.Text;
+  private collapseIcon!: Phaser.GameObjects.Text;
   
   // 드롭다운 상태
   private isDropdownOpen = false;
   private dropdownItems: Phaser.GameObjects.Container[] = [];
   
+  // 접기 상태
+  private isCollapsed = false;
+  private readonly panelW = 200;
+  private readonly panelH = 220;
+  private readonly headerH = 28;
+  
   // 상태
+  private mapRevealEnabled = false;
   private currentSettings: DirectorSettings = {
     enabled: false,
     stance: DirectorStance.BALANCED,
@@ -36,6 +48,7 @@ export class DirectorPanel {
   public onSettingsChange?: (settings: Partial<DirectorSettings>) => void;
   public onStrategySelect?: (strategyId: string) => void;
   public onEditStrategy?: () => void;
+  public onMapRevealToggle?: (enabled: boolean) => void;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -43,51 +56,134 @@ export class DirectorPanel {
   }
 
   private createUI(): void {
+    const width = this.scene.scale.width;
     const height = this.scene.scale.height;
     
-    // 미니맵 위에 배치
-    this.container = this.scene.add.container(10, height - 400);
+    // 오른쪽 아래에 배치
+    this.container = this.scene.add.container(width - this.panelW - 10, height - this.panelH - 10);
     this.container.setScrollFactor(0);
     this.container.setDepth(3100);
     
-    const panelW = 180;
-    const panelH = 190;
-    
     // 배경
-    const bg = this.scene.add.rectangle(0, 0, panelW, panelH, 0x0a1628, 0.95);
-    bg.setOrigin(0, 0);
-    bg.setStrokeStyle(2, 0x1a3a5a);
-    this.container.add(bg);
+    this.background = this.scene.add.rectangle(0, 0, this.panelW, this.panelH, 0x0a1628, 0.95);
+    this.background.setOrigin(0, 0);
+    this.background.setStrokeStyle(2, 0x1a3a5a);
+    this.container.add(this.background);
+    
+    // 헤더 (클릭으로 접기/펼치기)
+    const header = this.scene.add.rectangle(0, 0, this.panelW, this.headerH, 0x1a3a5a, 1);
+    header.setOrigin(0, 0);
+    header.setInteractive({ useHandCursor: true });
+    this.container.add(header);
     
     // 타이틀
-    const title = this.scene.add.text(panelW / 2, 8, '[ 감독 모드 ]', {
-      fontSize: '12px',
+    const title = this.scene.add.text(10, this.headerH / 2, '[ 감독 모드 ]', {
+      fontSize: '13px',
       color: '#4a9eff',
       fontStyle: 'bold',
     });
-    title.setOrigin(0.5, 0);
+    title.setOrigin(0, 0.5);
     this.container.add(title);
     
+    // 접기 아이콘
+    this.collapseIcon = this.scene.add.text(this.panelW - 20, this.headerH / 2, '▼', {
+      fontSize: '12px',
+      color: '#4a9eff',
+    });
+    this.collapseIcon.setOrigin(0.5);
+    this.container.add(this.collapseIcon);
+    
+    // 헤더 클릭 이벤트
+    header.on('pointerdown', () => this.toggleCollapse());
+    header.on('pointerover', () => header.setFillStyle(0x2a4a6a));
+    header.on('pointerout', () => header.setFillStyle(0x1a3a5a));
+    
+    // 컨텐츠 컨테이너 (접기 시 숨김)
+    this.contentContainer = this.scene.add.container(0, this.headerH);
+    this.container.add(this.contentContainer);
+    
     // On/Off 토글
-    this.createEnableToggle(10, 30);
+    this.createEnableToggle(20, 8);
     
     // 전략 선택 드롭다운
-    this.createStrategyDropdown(10, 62);
+    this.createStrategyDropdown(20, 44);
     
     // 편집 버튼
-    this.createEditButton(140, 62);
+    this.createEditButton(154, 44);
+
+    // 맵 리빌 토글
+    this.createMapRevealToggle(20, 138);
     
     // 통계
-    this.statsText = this.scene.add.text(10, 160, '', {
-      fontSize: '10px',
-      color: '#888888',
+    this.statsText = this.scene.add.text(10, 175, '', {
+      fontSize: '11px',
+      color: '#cccccc',
     });
-    this.container.add(this.statsText);
+    this.contentContainer.add(this.statsText);
+  }
+  
+  private toggleCollapse(): void {
+    this.isCollapsed = !this.isCollapsed;
+    this.closeDropdown();
+    
+    const height = this.scene.scale.height;
+    
+    if (this.isCollapsed) {
+      this.contentContainer.setVisible(false);
+      this.background.setSize(this.panelW, this.headerH);
+      this.collapseIcon.setText('▲');
+      // 접힌 상태에서 위치 조정
+      this.container.setY(height - this.headerH - 10);
+    } else {
+      this.contentContainer.setVisible(true);
+      this.background.setSize(this.panelW, this.panelH);
+      this.collapseIcon.setText('▼');
+      this.container.setY(height - this.panelH - 10);
+    }
+  }
+  
+  isCollapsedState(): boolean {
+    return this.isCollapsed;
+  }
+  
+  getHeight(): number {
+    return this.isCollapsed ? this.headerH : this.panelH;
+  }
+
+  private createMapRevealToggle(x: number, y: number): void {
+    const w = 160;
+    const h = 26;
+    
+    this.mapRevealToggle = this.scene.add.rectangle(x, y, w, h, 0x333333);
+    this.mapRevealToggle.setOrigin(0, 0);
+    this.mapRevealToggle.setStrokeStyle(1, 0x555555);
+    this.mapRevealToggle.setInteractive({ useHandCursor: true });
+    
+    this.mapRevealText = this.scene.add.text(x + w / 2, y + h / 2, 'MAP REVEAL: OFF', {
+      fontSize: '11px',
+      color: '#888888',
+      fontStyle: 'bold',
+    });
+    this.mapRevealText.setOrigin(0.5);
+    
+    this.mapRevealToggle.on('pointerdown', () => {
+      this.toggleMapReveal();
+    });
+    
+    this.mapRevealToggle.on('pointerover', () => {
+      this.mapRevealToggle.setStrokeStyle(2, 0x4a9eff);
+    });
+    
+    this.mapRevealToggle.on('pointerout', () => {
+      this.mapRevealToggle.setStrokeStyle(1, 0x555555);
+    });
+    
+    this.contentContainer.add([this.mapRevealToggle, this.mapRevealText]);
   }
 
   private createEnableToggle(x: number, y: number): void {
     const w = 160;
-    const h = 24;
+    const h = 26;
     
     this.enableToggle = this.scene.add.rectangle(x, y, w, h, 0x333333);
     this.enableToggle.setOrigin(0, 0);
@@ -115,15 +211,15 @@ export class DirectorPanel {
       this.enableToggle.setStrokeStyle(1, 0x555555);
     });
     
-    this.container.add([this.enableToggle, this.enableText]);
+    this.contentContainer.add([this.enableToggle, this.enableText]);
   }
 
   private createStrategyDropdown(x: number, y: number): void {
-    const w = 120;
+    const w = 130;
     const h = 26;
     
     this.strategyContainer = this.scene.add.container(x, y);
-    this.container.add(this.strategyContainer);
+    this.contentContainer.add(this.strategyContainer);
     
     // 드롭다운 버튼 배경
     const dropdownBg = this.scene.add.rectangle(0, 0, w, h, 0x1a2a3a);
@@ -166,19 +262,19 @@ export class DirectorPanel {
     
     // 라벨
     const label = this.scene.add.text(x, y + h + 4, '전략 선택', {
-      fontSize: '9px',
+      fontSize: '10px',
       color: '#555555',
     });
-    this.container.add(label);
+    this.contentContainer.add(label);
     
     // 전략 설명
-    const descLabel = this.scene.add.text(x, y + h + 20, '', {
-      fontSize: '9px',
-      color: '#666666',
+    const descLabel = this.scene.add.text(x, y + h + 18, '', {
+      fontSize: '10px',
+      color: '#888888',
       wordWrap: { width: 160 },
     });
     descLabel.setName('strategyDesc');
-    this.container.add(descLabel);
+    this.contentContainer.add(descLabel);
   }
 
   private createEditButton(x: number, y: number): void {
@@ -213,8 +309,32 @@ export class DirectorPanel {
       icon.setColor('#888888');
     });
     
-    this.container.add([btn, icon]);
+    this.contentContainer.add([btn, icon]);
   }
+
+
+
+  private toggleMapReveal(): void {
+    this.mapRevealEnabled = !this.mapRevealEnabled;
+    this.updateMapRevealUI();
+    this.onMapRevealToggle?.(this.mapRevealEnabled);
+  }
+
+  private updateMapRevealUI(): void {
+    if (this.mapRevealEnabled) {
+      this.mapRevealToggle.setFillStyle(0x1a5a1a);
+      this.mapRevealToggle.setStrokeStyle(1, 0x44ff44);
+      this.mapRevealText.setText('MAP REVEAL: ON');
+      this.mapRevealText.setColor('#44ff44');
+    } else {
+      this.mapRevealToggle.setFillStyle(0x333333);
+      this.mapRevealToggle.setStrokeStyle(1, 0x555555);
+      this.mapRevealText.setText('MAP REVEAL: OFF');
+      this.mapRevealText.setColor('#888888');
+    }
+  }
+
+
 
   private toggleDropdown(): void {
     if (this.isDropdownOpen) {
@@ -293,7 +413,7 @@ export class DirectorPanel {
     this.currentStrategyText.setText(strategy.name);
     
     // 설명 업데이트
-    const descLabel = this.container.getByName('strategyDesc') as Phaser.GameObjects.Text;
+    const descLabel = this.contentContainer.getByName('strategyDesc') as Phaser.GameObjects.Text;
     if (descLabel) {
       descLabel.setText(strategy.description);
     }
@@ -333,7 +453,7 @@ export class DirectorPanel {
       this.selectedStrategy = snapshot.currentStrategy;
       this.currentStrategyText.setText(snapshot.currentStrategy.name);
       
-      const descLabel = this.container.getByName('strategyDesc') as Phaser.GameObjects.Text;
+      const descLabel = this.contentContainer.getByName('strategyDesc') as Phaser.GameObjects.Text;
       if (descLabel) {
         descLabel.setText(snapshot.currentStrategy.description);
       }

@@ -68,6 +68,10 @@ export class PromptInput {
     this.setupKeyboardInput();
   }
 
+  setLocalPlayerId(playerId: number): void {
+    this.localPlayerId = playerId;
+  }
+
   private createUI(): void {
     const width = this.scene.scale.width;
     const height = this.scene.scale.height;

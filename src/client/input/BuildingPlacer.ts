@@ -31,8 +31,11 @@ export class BuildingPlacer {
   private ghostGraphics: Phaser.GameObjects.Graphics | null = null;
   private gridSize: number;
 
+  // 네트워크 전용 모드 (명령만 전송)
+  private emitOnly: boolean = false;
+
   // 콜백
-  public onBuildingPlaced?: (buildingType: BuildingType, x: number, y: number) => void;
+  public onBuildingPlaced?: (buildingType: BuildingType, x: number, y: number, entityIds: number[]) => void;
 
   constructor(
     scene: Phaser.Scene,
@@ -50,6 +53,10 @@ export class BuildingPlacer {
     this.gridSize = gameState.config.tileSize;
 
     this.createGhostGraphics();
+  }
+
+  setEmitOnly(emitOnly: boolean): void {
+    this.emitOnly = emitOnly;
   }
 
   private createGhostGraphics(): void {
@@ -235,6 +242,13 @@ export class BuildingPlacer {
       }
     }
 
+    if (this.emitOnly) {
+      const selectedIds = this.selectionManager.getSelectedEntities().map((entity) => entity.id);
+      this.onBuildingPlaced?.(buildingType, x, y, selectedIds);
+      this.cancelPlacement();
+      return;
+    }
+
     // 가장 가까운 SCV 찾기
     const selectedEntities = this.selectionManager.getSelectedEntities();
     let nearestSCV: import('@core/ecs/Entity').Entity | null = null;
@@ -309,7 +323,7 @@ export class BuildingPlacer {
     console.log(`SCV ordered to build ${buildingType} at (${x}, ${y})`);
 
     // 콜백 호출
-    this.onBuildingPlaced?.(buildingType, x, y);
+    this.onBuildingPlaced?.(buildingType, x, y, selectedEntities.map((entity) => entity.id));
 
     // 배치 모드 종료
     this.cancelPlacement();

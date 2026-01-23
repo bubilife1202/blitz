@@ -16,7 +16,7 @@ import { ProductionQueue } from './components/ProductionQueue';
 import { Builder, BuilderState } from './components/Builder';
 import { Resource } from './components/Resource';
 import { UnitType, BuildingType, ResourceType, type PlayerId } from '@shared/types';
-import { UNIT_STATS, BUILDING_STATS, canTrainUnit } from '@shared/constants';
+import { UNIT_STATS, BUILDING_STATS, canBuildBuilding, canTrainUnit } from '@shared/constants';
 
 // 전략 성향 (deprecated - Strategy로 대체)
 export enum DirectorStance {
@@ -290,6 +290,11 @@ export class PlayerDirector {
   private lastArmyCount = 0;
   private lastEnemyCheckTick = 0;
   private enemyCheckInterval = 32; // 2초마다 적 체크
+  private lastEnemySeenTick = 0;
+  private lastIntelConfidence = 0.6;
+  private enemyLastSeen: Map<number, number> = new Map();
+  private intelDecayWindow = 640;
+  private intelMinConfidence = 0.2;
   
   // 플레이어 수동 조작 감지 (잠시 손 떼기)
   private lastManualCommandTick = 0;
@@ -418,29 +423,37 @@ export class PlayerDirector {
     const currentTick = this.gameState.getCurrentTick();
     
     if (request.type === 'attack') {
-      if (optionId === 'approve') {
+      if (optionId === 'approve' || optionId === 'attack_full') {
         this.launchAttack();
         this.addLog('공격 개시!', 'action');
+      } else if (optionId === 'attack_harass') {
+        this.launchHarass();
+        this.addLog('견제 공격 개시', 'action');
       } else {
         this.addLog('공격 대기', 'info');
-        this.lastAttackSuggestionTick = currentTick;
       }
+      this.lastAttackSuggestionTick = currentTick;
     } else if (request.type === 'expand') {
-      if (optionId === 'approve') {
+      if (optionId === 'approve' || optionId === 'expand_now') {
         this.buildExpansion();
         this.addLog('확장 시작!', 'action');
+      } else if (optionId === 'expand_defend') {
+        this.buildDefenseStructure();
+        this.addLog('방어 구조물 우선', 'action');
       } else {
         this.addLog('확장 보류', 'info');
-        this.lastExpandSuggestionTick = currentTick;
       }
+      this.lastExpandSuggestionTick = currentTick;
     } else if (request.type === 'tech') {
-      if (optionId === 'approve') {
+      if (optionId === 'approve' || optionId === 'tech_factory') {
         this.buildTechBuilding();
         this.addLog('테크 전환!', 'action');
+      } else if (optionId === 'tech_infantry') {
+        this.addLog('보병 유지', 'info');
       } else {
         this.addLog('테크 보류', 'info');
-        this.lastTechSuggestionTick = currentTick;
       }
+      this.lastTechSuggestionTick = currentTick;
     }
   }
 
@@ -461,6 +474,8 @@ export class PlayerDirector {
     
     const resources = this.gameState.getPlayerResources(this.playerId);
     if (!resources) return;
+
+    this.updateEnemyIntel(currentTick);
     
     // 계획 액션 초기화
     this.updatePlanActions(resources);
@@ -728,17 +743,42 @@ export class PlayerDirector {
     
     const combatUnits = this.getCombatUnits();
     const threshold = this.getAttackThreshold();
-    
-    if (combatUnits.length >= threshold) {
+    const confidence = this.getIntelConfidence(currentTick);
+    const powerRatio = this.getCombatPowerRatio();
+    const effectivePowerRatio = this.applyConfidencePenalty(powerRatio, confidence);
+    const nearbyEnemies = this.getNearbyEnemyCount(400);
+    const canHarass = this.getHarassUnits().length >= 2 && this.getEnemyWorkers().length > 0;
+
+    let adjustedThreshold = threshold;
+    if (confidence < 0.5) {
+      adjustedThreshold = Math.ceil(threshold * 1.3);
+    } else if (effectivePowerRatio > 1.5) {
+      adjustedThreshold = Math.max(3, Math.floor(threshold * 0.8));
+    }
+
+    if (nearbyEnemies >= 2) return;
+
+    const armyFactor = Math.min(1, combatUnits.length / Math.max(1, adjustedThreshold));
+    const ratioFactor = Math.min(1.6, effectivePowerRatio) / 1.6;
+    const infoFactor = confidence;
+    const riskScore = this.getRiskScore(confidence, powerRatio, nearbyEnemies);
+    const opportunityScore = armyFactor * 0.5 + ratioFactor * 0.35 + infoFactor * 0.15 - riskScore * 0.2;
+    const riskLabel = this.getRiskLabel(riskScore);
+    const infoLabel = this.getConfidenceLabel(confidence);
+    const timingLabel = effectivePowerRatio >= 1.2 ? '우위' : effectivePowerRatio >= 1.0 ? '근소 우위' : '팽팽';
+
+    if (combatUnits.length >= adjustedThreshold && effectivePowerRatio >= 1.0 && opportunityScore >= 0.55) {
+      const options = [
+        { id: 'approve', label: '총공격' },
+        ...(canHarass ? [{ id: 'attack_harass', label: '견제' }] : []),
+        { id: 'attack_delay', label: '대기' },
+      ];
       this.approvalRequest = {
         id: `attack-${currentTick}`,
         type: 'attack',
         title: '공격 준비 완료',
-        description: `전투 유닛 ${combatUnits.length}기가 준비되었습니다. 공격할까요?`,
-        options: [
-          { id: 'approve', label: '공격!' },
-          { id: 'deny', label: '대기' },
-        ],
+        description: `전투 ${combatUnits.length}기, 전투력 ${powerRatio.toFixed(2)}x (${timingLabel}), 정보 ${infoLabel}, 위험도 ${riskLabel}.`,
+        options,
       };
       this.lastAttackSuggestionTick = currentTick;
     }
@@ -774,6 +814,27 @@ export class PlayerDirector {
     }
   }
 
+  private launchHarass(): void {
+    const harassUnits = this.getHarassUnits();
+    if (harassUnits.length < 2) return;
+
+    const enemyWorkers = this.getEnemyWorkers();
+    if (enemyWorkers.length === 0) return;
+
+    const target = this.selectHarassTarget(harassUnits, enemyWorkers);
+    const targetPos = target.getComponent<Position>(Position);
+    if (!targetPos) return;
+
+    for (const unit of harassUnits) {
+      const movement = unit.getComponent<Movement>(Movement);
+      const combat = unit.getComponent<Combat>(Combat);
+      if (movement && combat) {
+        combat.startAttackMove(targetPos.x, targetPos.y);
+        movement.setTarget(targetPos.x, targetPos.y);
+      }
+    }
+  }
+
   // 확장 타이밍 제안
   private checkExpandTiming(currentTick: number, resources: { minerals: number; gas: number }): void {
     if (currentTick - this.lastExpandSuggestionTick < this.expandSuggestionCooldown) return;
@@ -784,15 +845,30 @@ export class PlayerDirector {
     );
     
     if (resources.minerals >= 400 && commandCenters.length === 1) {
+      const confidence = this.getIntelConfidence(currentTick);
+      const powerRatio = this.getCombatPowerRatio();
+      const effectivePowerRatio = this.applyConfidencePenalty(powerRatio, confidence);
+      const nearbyEnemies = this.getNearbyEnemyCount(350);
+      const riskScore = this.getRiskScore(confidence, powerRatio, nearbyEnemies);
+      const riskLabel = this.getRiskLabel(riskScore);
+      const infoLabel = this.getConfidenceLabel(confidence);
+      const canDefend = this.getDefenseBuildCandidate(resources) !== null;
+
+      if (nearbyEnemies > 0) return;
+      if (confidence > 0.6 && effectivePowerRatio < 0.85) return;
+
+      const options = [
+        { id: 'approve', label: '확장' },
+        ...(canDefend ? [{ id: 'expand_defend', label: '방어 우선' }] : []),
+        { id: 'expand_delay', label: '대기' },
+      ];
+
       this.approvalRequest = {
         id: `expand-${currentTick}`,
         type: 'expand',
         title: '확장 타이밍',
-        description: `자원이 충분합니다 (${resources.minerals}). 확장할까요?`,
-        options: [
-          { id: 'approve', label: '확장!' },
-          { id: 'deny', label: '나중에' },
-        ],
+        description: `자원 ${resources.minerals} 확보. 정보 ${infoLabel}, 위험도 ${riskLabel}.`,
+        options,
       };
       this.lastExpandSuggestionTick = currentTick;
     }
@@ -810,18 +886,250 @@ export class PlayerDirector {
     
     // 배럭은 있는데 팩토리가 없고, 자원이 충분할 때
     if (hasBarracks && !hasFactory && resources.minerals >= 200 && resources.gas >= 100) {
+      const confidence = this.getIntelConfidence(currentTick);
+      const powerRatio = this.getCombatPowerRatio();
+      const effectivePowerRatio = this.applyConfidencePenalty(powerRatio, confidence);
+      const nearbyEnemies = this.getNearbyEnemyCount(350);
+      const riskScore = this.getRiskScore(confidence, powerRatio, nearbyEnemies);
+      const riskLabel = this.getRiskLabel(riskScore);
+      const infoLabel = this.getConfidenceLabel(confidence);
+
+      if (nearbyEnemies > 0) return;
+      if (confidence > 0.6 && effectivePowerRatio < 0.9) return;
+
       this.approvalRequest = {
         id: `tech-${currentTick}`,
         type: 'tech',
         title: '테크 전환',
-        description: '팩토리를 건설해서 기갑 유닛을 생산할까요?',
+        description: `팩토리 전환 제안. 정보 ${infoLabel}, 위험도 ${riskLabel}.`,
         options: [
-          { id: 'approve', label: '팩토리!' },
-          { id: 'deny', label: '보병 유지' },
+          { id: 'approve', label: '팩토리' },
+          { id: 'tech_infantry', label: '보병 유지' },
+          { id: 'tech_delay', label: '대기' },
         ],
       };
       this.lastTechSuggestionTick = currentTick;
     }
+  }
+
+  private getRiskScore(confidence: number, powerRatio: number, nearbyEnemies: number): number {
+    const threatScore = this.getThreatScore();
+    const threat = Math.max(Math.min(1, nearbyEnemies / 3), threatScore);
+    const disadvantage = Math.max(0, 1 - powerRatio);
+    const infoRisk = 1 - confidence;
+    return Math.min(1, threat * 0.5 + disadvantage * 0.3 + infoRisk * 0.2);
+  }
+
+  private applyConfidencePenalty(powerRatio: number, confidence: number): number {
+    const penalty = 1 + (1 - confidence) * 0.35;
+    return powerRatio / penalty;
+  }
+
+  private getRiskLabel(riskScore: number): string {
+    if (riskScore >= 0.7) return '높음';
+    if (riskScore >= 0.4) return '중간';
+    return '낮음';
+  }
+
+  private getConfidenceLabel(confidence: number): string {
+    if (confidence >= 0.75) return '높음';
+    if (confidence >= 0.5) return '중간';
+    return '낮음';
+  }
+
+  private updateEnemyIntel(currentTick: number): void {
+    const enemies = this.getEnemyEntities();
+    if (enemies.length === 0) {
+      this.lastIntelConfidence = Math.max(0.2, this.lastIntelConfidence - 0.02);
+      return;
+    }
+
+    const aliveIds = new Set(enemies.map(enemy => enemy.id));
+    for (const id of this.enemyLastSeen.keys()) {
+      if (!aliveIds.has(id)) {
+        this.enemyLastSeen.delete(id);
+      }
+    }
+
+    let observedCount = 0;
+    for (const enemy of enemies) {
+      if (this.isEnemyObserved(enemy)) {
+        observedCount += 1;
+        this.enemyLastSeen.set(enemy.id, currentTick);
+      }
+    }
+
+    if (observedCount > 0) {
+      this.lastEnemySeenTick = currentTick;
+    }
+
+    let confidenceSum = 0;
+    for (const enemy of enemies) {
+      const lastSeen = this.enemyLastSeen.get(enemy.id);
+      if (lastSeen === undefined) {
+        confidenceSum += 0.35;
+        continue;
+      }
+
+      const age = Math.max(0, currentTick - lastSeen);
+      const decay = Math.exp(-age / this.intelDecayWindow);
+      const confidence = Math.max(this.intelMinConfidence, decay);
+      confidenceSum += confidence;
+    }
+
+    const avgConfidence = confidenceSum / enemies.length;
+    this.lastIntelConfidence = Math.min(1, Math.max(this.intelMinConfidence, avgConfidence));
+  }
+
+  private isEnemyObserved(enemy: Entity): boolean {
+    const enemyPos = enemy.getComponent<Position>(Position);
+    if (!enemyPos) return false;
+
+    const observers = [...this.getMyUnits(), ...this.getMyBuildings()];
+    for (const observer of observers) {
+      const pos = observer.getComponent<Position>(Position);
+      if (!pos) continue;
+      const dist = Math.hypot(pos.x - enemyPos.x, pos.y - enemyPos.y);
+      if (dist < 600) return true;
+    }
+
+    return false;
+  }
+
+  private getIntelConfidence(currentTick: number): number {
+    if (this.lastEnemySeenTick === 0) return this.lastIntelConfidence;
+    const ticksSince = currentTick - this.lastEnemySeenTick;
+    if (ticksSince <= 0) return this.lastIntelConfidence;
+    const decay = Math.max(0, this.lastIntelConfidence - ticksSince / (this.intelDecayWindow * 2));
+    return Math.max(this.intelMinConfidence, decay);
+  }
+
+  private getCombatPowerRatio(): number {
+    const myPower = this.getCombatPower(this.getCombatUnits());
+    const enemyUnits = this.getEnemyEntities().filter(e => e.getComponent<Unit>(Unit));
+    const enemyPower = this.getCombatPower(enemyUnits);
+    if (enemyPower <= 0) return 2;
+    return myPower / enemyPower;
+  }
+
+  private getCombatPower(entities: Entity[]): number {
+    let power = 0;
+    for (const entity of entities) {
+      const unit = entity.getComponent<Unit>(Unit);
+      if (!unit) continue;
+      const stats = UNIT_STATS[unit.unitType];
+      const dps = stats.attackSpeed > 0 ? stats.damage / stats.attackSpeed : 0;
+      const rangeFactor = Math.max(1, stats.range * 0.6);
+      const hpFactor = unit.hp * 0.6 + unit.maxHp * 0.1;
+      power += hpFactor + dps * 8 + rangeFactor * 4;
+    }
+    return power;
+  }
+
+  private getHarassUnits(): Entity[] {
+    const combatUnits = this.getCombatUnits();
+    const sorted = [...combatUnits].sort((a, b) => {
+      const unitA = a.getComponent<Unit>(Unit);
+      const unitB = b.getComponent<Unit>(Unit);
+      if (!unitA || !unitB) return 0;
+      return UNIT_STATS[unitB.unitType].moveSpeed - UNIT_STATS[unitA.unitType].moveSpeed;
+    });
+    return sorted.slice(0, 3);
+  }
+
+  private getEnemyWorkers(): Entity[] {
+    return this.getEnemyEntities().filter(e => {
+      const unit = e.getComponent<Unit>(Unit);
+      return unit?.unitType === UnitType.SCV;
+    });
+  }
+
+  private selectHarassTarget(harassUnits: Entity[], enemyWorkers: Entity[]): Entity {
+    const center = this.getUnitsCenter(harassUnits);
+    if (!center) return enemyWorkers[0];
+
+    let best = enemyWorkers[0];
+    let bestScore = -Infinity;
+    for (const worker of enemyWorkers) {
+      const pos = worker.getComponent<Position>(Position);
+      if (!pos) continue;
+      const dist = Math.hypot(pos.x - center.x, pos.y - center.y);
+      const hpPercent = this.getEntityHpPercent(worker);
+      const score = 60 - dist * 0.04 + (1 - hpPercent) * 12;
+      if (score > bestScore) {
+        bestScore = score;
+        best = worker;
+      }
+    }
+
+    return best;
+  }
+
+  private getEntityHpPercent(entity: Entity): number {
+    const unit = entity.getComponent<Unit>(Unit);
+    if (unit) {
+      return unit.maxHp > 0 ? unit.hp / unit.maxHp : 1;
+    }
+
+    const building = entity.getComponent<Building>(Building);
+    if (building) {
+      return building.maxHp > 0 ? building.hp / building.maxHp : 1;
+    }
+
+    return 1;
+  }
+
+  private getUnitsCenter(units: Entity[]): { x: number; y: number } | null {
+    if (units.length === 0) return null;
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const unit of units) {
+      const pos = unit.getComponent<Position>(Position);
+      if (!pos) continue;
+      sumX += pos.x;
+      sumY += pos.y;
+      count += 1;
+    }
+    if (count === 0) return null;
+    return { x: sumX / count, y: sumY / count };
+  }
+
+  private getNearbyEnemyCount(radius: number): number {
+    const myBuildings = this.getMyBuildings();
+    const myCC = myBuildings.find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const basePos = myCC?.getComponent<Position>(Position);
+    if (!basePos) return 0;
+
+    return this.getEnemyEntities().filter(e => {
+      const pos = e.getComponent<Position>(Position);
+      if (!pos) return false;
+      return Math.hypot(pos.x - basePos.x, pos.y - basePos.y) < radius;
+    }).length;
+  }
+
+  private getThreatScore(): number {
+    const myBuildings = this.getMyBuildings();
+    const myCC = myBuildings.find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const basePos = myCC?.getComponent<Position>(Position);
+    if (!basePos) return 0;
+
+    const radius = 420;
+    const enemies = this.getEnemyEntities().filter(e => {
+      const unit = e.getComponent<Unit>(Unit);
+      return !!unit && unit.unitType !== UnitType.SCV;
+    });
+
+    let threat = 0;
+    for (const enemy of enemies) {
+      const pos = enemy.getComponent<Position>(Position);
+      if (!pos) continue;
+      const dist = Math.hypot(pos.x - basePos.x, pos.y - basePos.y);
+      if (dist > radius) continue;
+      threat += 1 - dist / radius;
+    }
+
+    return Math.min(1, threat / 4);
   }
 
   // 적 접근 감지
@@ -942,6 +1250,70 @@ export class PlayerDirector {
       movement.setTarget(buildPos.x, buildPos.y);
       if (gatherer) gatherer.stop();
     }
+  }
+
+  private buildDefenseStructure(): void {
+    const resources = this.gameState.getPlayerResources(this.playerId);
+    if (!resources) {
+      this.addLog('자원 정보 없음', 'warning');
+      return;
+    }
+
+    const defenseType = this.getDefenseBuildCandidate(resources);
+    if (!defenseType) {
+      this.addLog('방어 건설 조건 부족', 'info');
+      return;
+    }
+
+    const idleWorkers = this.getIdleWorkers();
+    if (idleWorkers.length === 0) {
+      this.addLog('건설 가능한 SCV 없음', 'warning');
+      return;
+    }
+
+    const stats = BUILDING_STATS[defenseType];
+    if (resources.minerals < stats.mineralCost || resources.gas < stats.gasCost) {
+      this.addLog('자원 부족', 'warning');
+      return;
+    }
+
+    const buildPos = this.findBuildLocation(defenseType);
+    if (!buildPos) {
+      this.addLog('건설 위치를 찾을 수 없음', 'warning');
+      return;
+    }
+
+    const worker = idleWorkers[0];
+    this.gameState.modifyPlayerResources(this.playerId, {
+      minerals: -stats.mineralCost,
+      gas: -stats.gasCost,
+    });
+
+    const builder = worker.getComponent<Builder>(Builder);
+    const gatherer = worker.getComponent<Gatherer>(Gatherer);
+    const movement = worker.getComponent<Movement>(Movement);
+
+    if (builder && movement) {
+      builder.startBuildCommand(defenseType, buildPos.x, buildPos.y);
+      movement.setTarget(buildPos.x, buildPos.y);
+      if (gatherer) gatherer.stop();
+    }
+  }
+
+  private getDefenseBuildCandidate(resources: { minerals: number; gas: number }): BuildingType | null {
+    const buildingTypes = this.getMyBuildings().map(b => b.getComponent<Building>(Building)!.buildingType);
+    const bunker = BuildingType.BUNKER;
+    const turret = BuildingType.MISSILE_TURRET;
+
+    if (canBuildBuilding(bunker, buildingTypes) && resources.minerals >= BUILDING_STATS[bunker].mineralCost) {
+      return bunker;
+    }
+
+    if (canBuildBuilding(turret, buildingTypes) && resources.minerals >= BUILDING_STATS[turret].mineralCost) {
+      return turret;
+    }
+
+    return null;
   }
 
   // 확장 위치 찾기 (기존 베이스에서 멀리)

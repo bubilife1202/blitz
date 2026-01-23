@@ -30,11 +30,17 @@ export class FogRenderer {
 
     this.fogGraphics.clear();
 
+    if (this.visionSystem.isRevealAll()) {
+      return;
+    }
+
     const visionMap = this.visionSystem.getVisionMap(this.playerId);
     const exploredMap = this.visionSystem.getExploredMap(this.playerId);
     const { width, height, tileSize } = this.visionSystem.getMapDimensions();
 
     if (!visionMap || !exploredMap) return;
+
+    const showExplored = this.visionSystem.isShowExplored();
 
     // 카메라 뷰포트 내의 타일만 렌더링
     const camera = this.scene.cameras.main;
@@ -53,17 +59,17 @@ export class FogRenderer {
         const y = tileY * tileSize;
 
         if (visibility === 2) {
-          // VISIBLE - 안개 없음
           continue;
-        } else if (explored === 1) {
-          // EXPLORED - 반투명 안개
+        }
+
+        if (showExplored && explored === 1) {
           this.fogGraphics.fillStyle(0x000000, 0.5);
           this.fogGraphics.fillRect(x, y, tileSize, tileSize);
-        } else {
-          // HIDDEN - 완전 검정
-          this.fogGraphics.fillStyle(0x000000, 0.95);
-          this.fogGraphics.fillRect(x, y, tileSize, tileSize);
+          continue;
         }
+
+        this.fogGraphics.fillStyle(0x000000, 0.95);
+        this.fogGraphics.fillRect(x, y, tileSize, tileSize);
       }
     }
   }
