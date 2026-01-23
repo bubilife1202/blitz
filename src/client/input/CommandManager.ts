@@ -37,6 +37,9 @@ export class CommandManager {
   // 일시정지 상태 (입력 차단용)
   private isPaused: boolean = false;
 
+  // 네트워크 전용 모드 (명령만 전송)
+  private emitOnly: boolean = false;
+
   // 명령 콜백 (서버/로컬호스트로 전달)
   public onCommand?: (command: GameCommand) => void;
 
@@ -64,6 +67,14 @@ export class CommandManager {
     if (paused) {
       this.exitAttackMoveMode();
     }
+  }
+
+  setEmitOnly(emitOnly: boolean): void {
+    this.emitOnly = emitOnly;
+  }
+
+  private emitCommand(command: GameCommand): void {
+    this.onCommand?.(command);
   }
 
   private setupInput(): void {
@@ -174,6 +185,18 @@ export class CommandManager {
     this.showAttackMarker(targetX, targetY);
     soundManager.play('command_attack');
 
+    if (this.emitOnly) {
+      this.emitCommand({
+        type: CommandType.ATTACK,
+        playerId: this.localPlayerId,
+        entityIds: selectedEntities.map((e) => e.id),
+        targetEntityId: targetEntityId,
+        targetPosition: { x: targetX, y: targetY },
+        tick: this.gameState.getCurrentTick(),
+      });
+      return;
+    }
+
     for (const entity of selectedEntities) {
       const combat = entity.getComponent<Combat>(Combat);
       const movement = entity.getComponent<Movement>(Movement);
@@ -191,7 +214,7 @@ export class CommandManager {
     }
 
     // 명령 콜백
-    this.onCommand?.({
+    this.emitCommand({
       type: CommandType.ATTACK,
       playerId: this.localPlayerId,
       entityIds: selectedEntities.map((e) => e.id),
@@ -208,6 +231,18 @@ export class CommandManager {
 
     // 채취 마커 표시 (청록색)
     this.showGatherMarker(targetX, targetY);
+
+    if (this.emitOnly) {
+      this.emitCommand({
+        type: CommandType.GATHER,
+        playerId: this.localPlayerId,
+        entityIds: selectedEntities.map((e) => e.id),
+        targetEntityId: resourceEntityId,
+        targetPosition: { x: targetX, y: targetY },
+        tick: this.gameState.getCurrentTick(),
+      });
+      return;
+    }
 
     // 가장 가까운 커맨드 센터 찾기
     const commandCenter = this.findNearestCommandCenter(targetX, targetY);
@@ -232,7 +267,7 @@ export class CommandManager {
     }
 
     // 명령 콜백
-    this.onCommand?.({
+    this.emitCommand({
       type: CommandType.GATHER,
       playerId: this.localPlayerId,
       entityIds: selectedEntities.map((e) => e.id),
@@ -357,6 +392,27 @@ export class CommandManager {
     this.showMoveMarker(targetX, targetY);
     soundManager.play('command_move');
 
+    if (this.emitOnly) {
+      const positions = this.calculateFormation(
+        selectedEntities.length,
+        targetX,
+        targetY
+      );
+      const entityTargets: Record<number, Vector2> = {};
+      for (let i = 0; i < selectedEntities.length; i++) {
+        entityTargets[selectedEntities[i].id] = positions[i];
+      }
+      this.emitCommand({
+        type: CommandType.MOVE,
+        playerId: this.localPlayerId,
+        entityIds: selectedEntities.map((e) => e.id),
+        targetPosition: { x: targetX, y: targetY },
+        entityTargets,
+        tick: this.gameState.getCurrentTick(),
+      });
+      return;
+    }
+
     // 여러 유닛 이동시 포메이션 계산
     const positions = this.calculateFormation(
       selectedEntities.length,
@@ -390,7 +446,7 @@ export class CommandManager {
     }
 
     // 명령 콜백 (멀티플레이어용)
-    this.onCommand?.({
+    this.emitCommand({
       type: CommandType.MOVE,
       playerId: this.localPlayerId,
       entityIds: selectedEntities.map((e) => e.id),
@@ -408,12 +464,22 @@ export class CommandManager {
     const hasUnits = selectedEntities.some(e => e.getComponent<Unit>(Unit));
     if (!hasUnits) return;
 
+    if (this.emitOnly) {
+      this.emitCommand({
+        type: CommandType.STOP,
+        playerId: this.localPlayerId,
+        entityIds: selectedEntities.map((e) => e.id),
+        tick: this.gameState.getCurrentTick(),
+      });
+      return;
+    }
+
     for (const entity of selectedEntities) {
       const movement = entity.getComponent<Movement>(Movement);
       movement?.stop();
     }
 
-    this.onCommand?.({
+    this.emitCommand({
       type: CommandType.STOP,
       playerId: this.localPlayerId,
       entityIds: selectedEntities.map((e) => e.id),
@@ -430,6 +496,16 @@ export class CommandManager {
     const hasUnits = selectedEntities.some(e => e.getComponent<Unit>(Unit));
     if (!hasUnits) return;
 
+    if (this.emitOnly) {
+      this.emitCommand({
+        type: CommandType.HOLD,
+        playerId: this.localPlayerId,
+        entityIds: selectedEntities.map((e) => e.id),
+        tick: this.gameState.getCurrentTick(),
+      });
+      return;
+    }
+
     for (const entity of selectedEntities) {
       const movement = entity.getComponent<Movement>(Movement);
       const combat = entity.getComponent<Combat>(Combat);
@@ -437,7 +513,7 @@ export class CommandManager {
       combat?.holdPosition();
     }
 
-    this.onCommand?.({
+    this.emitCommand({
       type: CommandType.HOLD,
       playerId: this.localPlayerId,
       entityIds: selectedEntities.map((e) => e.id),
@@ -514,6 +590,17 @@ export class CommandManager {
     this.showAttackMoveMarker(targetX, targetY);
     soundManager.play('command_attack');
 
+    if (this.emitOnly) {
+      this.emitCommand({
+        type: CommandType.ATTACK,
+        playerId: this.localPlayerId,
+        entityIds: selectedEntities.map((e) => e.id),
+        targetPosition: { x: targetX, y: targetY },
+        tick: this.gameState.getCurrentTick(),
+      });
+      return;
+    }
+
     for (const entity of selectedEntities) {
       const combat = entity.getComponent<Combat>(Combat);
       const movement = entity.getComponent<Movement>(Movement);
@@ -526,7 +613,7 @@ export class CommandManager {
     }
 
     // 명령 콜백
-    this.onCommand?.({
+    this.emitCommand({
       type: CommandType.ATTACK,
       playerId: this.localPlayerId,
       entityIds: selectedEntities.map((e) => e.id),

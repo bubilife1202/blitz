@@ -7,6 +7,7 @@ import { GameState } from '@core/GameState';
 import { GameLoop } from '@core/GameLoop';
 import { LocalHost } from '@host/LocalHost';
 import { PathfindingService } from '@core/PathfindingService';
+
 import { MovementSystem } from '@core/systems/MovementSystem';
 import { GatherSystem } from '@core/systems/GatherSystem';
 import { ProductionSystem } from '@core/systems/ProductionSystem';
@@ -23,6 +24,7 @@ import { BuildingRenderer } from '../renderer/BuildingRenderer';
 import { ResourceRenderer } from '../renderer/ResourceRenderer';
 import { FogRenderer } from '../renderer/FogRenderer';
 import { EffectsRenderer } from '../renderer/EffectsRenderer';
+import type { Entity } from '@core/ecs/Entity';
 import { SelectionManager } from '../input/SelectionManager';
 import { CommandManager } from '../input/CommandManager';
 import { BuildingPlacer } from '../input/BuildingPlacer';
@@ -35,7 +37,7 @@ import { Owner } from '@core/components/Owner';
 import { Building } from '@core/components/Building';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { Unit } from '@core/components/Unit';
-import { Race, BuildingType, UnitType, UpgradeType, AIDifficulty } from '@shared/types';
+import { Race, BuildingType, UnitType, UpgradeType, AIDifficulty, type PlayerId } from '@shared/types';
 import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS, canTrainUnit } from '@shared/constants';
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { combatEvents } from '@core/events/CombatEvents';
@@ -43,12 +45,20 @@ import { soundManager } from '../audio/SoundManager';
 import { PlayerDirector } from '@core/PlayerDirector';
 import { DirectorPanel } from '../ui/DirectorPanel';
 import { PlanFeed } from '../ui/PlanFeed';
+import { ReportFeed } from '../ui/ReportFeed';
 import { StrategyEditor } from '../ui/StrategyEditor';
+import { NetworkClient, NetworkEvent } from '@core/network/NetworkClient';
+import { CommandExecutor } from '@core/commands/CommandExecutor';
+import type { GameCommand } from '@shared/types';
 
 interface GameSceneData {
   mode: 'single' | 'multi';
   difficulty?: AIDifficulty;
   aiCount?: number;
+  seed?: number;
+  // 멀티플레이용
+  isHost?: boolean;
+  playerId?: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -56,6 +66,7 @@ export class GameScene extends Phaser.Scene {
   private gameLoop!: GameLoop;
   private localHost!: LocalHost;
   private pathfinding!: PathfindingService;
+  private localPlayerId: PlayerId = 1;
   
   // 렌더러
   private unitRenderer!: UnitRenderer;
@@ -76,7 +87,7 @@ export class GameScene extends Phaser.Scene {
   private minimap!: Minimap;
   private hud!: HUD;
   private pauseMenu!: PauseMenu;
-  private promptInput!: PromptInput;
+  private promptInput?: PromptInput;
   private gameOverText!: Phaser.GameObjects.Text;
   private isPaused: boolean = false;
   private aiDifficulty: AIDifficulty = AIDifficulty.NORMAL;
@@ -84,10 +95,11 @@ export class GameScene extends Phaser.Scene {
   private aiControllers: AIController[] = [];
   
   // 감독 모드
-  private playerDirector!: PlayerDirector;
-  private directorPanel!: DirectorPanel;
-  private planFeed!: PlanFeed;
-  private strategyEditor!: StrategyEditor;
+  private playerDirector?: PlayerDirector;
+  private directorPanel?: DirectorPanel;
+  private planFeed?: PlanFeed;
+  private reportFeed?: ReportFeed;
+  private strategyEditor?: StrategyEditor;
   
   // 카메라 드래그
   private isDragging: boolean = false;
@@ -97,34 +109,74 @@ export class GameScene extends Phaser.Scene {
   // 방향키 카메라 이동
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private cameraZoom: number = 1;
+  private lockCameraZoom: boolean = true;
+  private mapRevealEnabled: boolean = false;
+  private mapSeed: number = 0;
+
+  private completionTrackingReady: boolean = false;
+  private completedBuildings: Set<number> = new Set();
+  private knownUnits: Set<number> = new Set();
+  private lastUnitCompleteTime: number = 0;
+  private lastBuildingCompleteTime: number = 0;
+  
+  // 멀티플레이
+  private isMultiplayer: boolean = false;
+  private network?: NetworkClient;
+  private commandExecutor?: CommandExecutor;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   init(data: GameSceneData): void {
-    console.log('GameScene init, mode:', data.mode, 'difficulty:', data.difficulty, 'aiCount:', data.aiCount);
+    console.log('GameScene init:', data);
+    
+    this.isMultiplayer = data.mode === 'multi';
+    
+    if (this.isMultiplayer) {
+      // 멀티플레이: playerId는 LobbyScene에서 전달받음
+      this.localPlayerId = (data.playerId || 1) as PlayerId;
+      this.aiCount = 0; // 멀티에서는 AI 없음
+      this.network = NetworkClient.getInstance();
+    } else {
+      // 싱글플레이
+      this.localPlayerId = 1;
+      this.aiCount = data.aiCount || 1;
+      this.network = undefined;
+    }
+    
     this.aiDifficulty = data.difficulty || AIDifficulty.NORMAL;
-    this.aiCount = data.aiCount || 1;
+    this.mapSeed = data.seed ?? Date.now();
   }
 
   create(): void {
+    console.time('🎮 GameScene.create TOTAL');
+    
+    console.time('1️⃣ Core init (GameState, Pathfinding, LocalHost)');
     // 게임 상태 초기화
     this.gameState = new GameState();
     
     // 패스파인딩 서비스 초기화
     this.pathfinding = new PathfindingService(this.gameState.config);
     
-    // 로컬 호스트 초기화 (싱글플레이어)
+    // 로컬 호스트 초기화
     this.localHost = new LocalHost(this.gameState, this.pathfinding);
     this.localHost.setAICount(this.aiCount);
     
-    // 플레이어 추가 (1 = 유저, 2~4 = AI)
+    // 플레이어 추가
     this.gameState.addPlayer(1, Race.TERRAN);
-    for (let i = 0; i < this.aiCount; i++) {
-      this.gameState.addPlayer(2 + i, Race.TERRAN);
+    if (this.aiCount > 0) {
+      // 싱글플레이: AI 추가
+      for (let i = 0; i < this.aiCount; i++) {
+        this.gameState.addPlayer(2 + i, Race.TERRAN);
+      }
+    } else {
+      // 멀티플레이: 상대 플레이어 추가
+      this.gameState.addPlayer(2, Race.TERRAN);
     }
+    console.timeEnd('1️⃣ Core init (GameState, Pathfinding, LocalHost)');
     
+    console.time('2️⃣ Systems registration');
     // 시스템 등록 (우선순위 순서)
     this.visionSystem = new VisionSystem();
     this.gameState.addSystem(this.visionSystem); // 시야 시스템 (먼저)
@@ -142,7 +194,9 @@ export class GameScene extends Phaser.Scene {
     this.gameState.addSystem(new HealSystem()); // 메딕 치료 시스템
     this.gameState.addSystem(new DefenseSystem()); // 방어 건물 공격 시스템
     this.gameState.addSystem(new CombatSystem());
+    console.timeEnd('2️⃣ Systems registration');
     
+    console.time('3️⃣ AI Controllers');
     // AI 컨트롤러들 (패스파인딩 연결)
     this.aiControllers = [];
     for (let i = 0; i < this.aiCount; i++) {
@@ -150,24 +204,31 @@ export class GameScene extends Phaser.Scene {
       const controller = new AIController(this.gameState, aiPlayerId, this.pathfinding, this.aiDifficulty);
       this.aiControllers.push(controller);
     }
+    console.timeEnd('3️⃣ AI Controllers');
     
     // 게임 루프 초기화
     this.gameLoop = new GameLoop(this.gameState, {
-      onTick: (tick) => this.onGameTick(tick),
+      onTick: (tick) => {
+        this.onGameTick(tick);
+      },
     });
 
+    console.time('4️⃣ renderMap()');
     // 맵 렌더링
     this.renderMap();
+    console.timeEnd('4️⃣ renderMap()');
     
     // 렌더러 초기화 (시야 시스템 연결)
-    this.unitRenderer = new UnitRenderer(this, 1, this.visionSystem);
-    this.buildingRenderer = new BuildingRenderer(this, 1, this.visionSystem);
+    this.unitRenderer = new UnitRenderer(this, this.localPlayerId, this.visionSystem);
+    this.buildingRenderer = new BuildingRenderer(this, this.localPlayerId, this.visionSystem);
     this.resourceRenderer = new ResourceRenderer(this);
-    this.fogRenderer = new FogRenderer(this, this.visionSystem, 1);
+    this.fogRenderer = new FogRenderer(this, this.visionSystem, this.localPlayerId);
     this.effectsRenderer = new EffectsRenderer(this);
+
+    this.applyMapVisibilityMode();
     
     // 입력 매니저 초기화
-    this.selectionManager = new SelectionManager(this, this.gameState, 1);
+    this.selectionManager = new SelectionManager(this, this.gameState, this.localPlayerId);
     this.selectionManager.onHoverChange = (entityId) => {
       this.unitRenderer.setHoveredEntity(entityId);
     };
@@ -176,8 +237,26 @@ export class GameScene extends Phaser.Scene {
       this.gameState,
       this.selectionManager,
       this.pathfinding,
-      1
+      this.localPlayerId
     );
+    
+    // 멀티플레이 명령 동기화 설정
+    if (this.isMultiplayer && this.network) {
+      this.commandExecutor = new CommandExecutor(this.gameState, this.pathfinding);
+      
+      // 로컬 명령 → 네트워크로 전송
+      this.commandManager.onCommand = (command: GameCommand) => {
+        this.network?.sendCommand(command);
+      };
+      
+      // 원격 명령 수신 → 실행
+      this.network.on(NetworkEvent.COMMAND, (command: GameCommand) => {
+        // 자기 명령은 이미 로컬에서 실행됨, 상대 명령만 실행
+        if (command.playerId !== this.localPlayerId) {
+          this.commandExecutor?.execute(command);
+        }
+      });
+    }
     
     // 건물 배치 매니저 초기화
     this.buildingPlacer = new BuildingPlacer(
@@ -185,9 +264,9 @@ export class GameScene extends Phaser.Scene {
       this.gameState,
       this.pathfinding,
       this.selectionManager,
-      1
+      this.localPlayerId
     );
-    
+
     // 초기 유닛/건물 배치
     this.localHost.setupInitialEntities();
     
@@ -209,6 +288,7 @@ export class GameScene extends Phaser.Scene {
     
     // HUD 설정
     this.hud = new HUD(this, this.gameState, this.selectionManager);
+    this.hud.setLocalPlayerId(this.localPlayerId);
     this.hud.onBuildCommand = (buildingType: BuildingType) => {
       this.buildingPlacer.startPlacement(buildingType);
     };
@@ -273,6 +353,7 @@ export class GameScene extends Phaser.Scene {
       this.commandManager,
       this.buildingPlacer
     );
+    this.promptInput.setLocalPlayerId(this.localPlayerId);
     this.promptInput.onTrainUnit = (unitType: UnitType) => {
       this.trainUnit(unitType);
     };
@@ -281,36 +362,43 @@ export class GameScene extends Phaser.Scene {
     };
     
     // 감독 모드 설정
-    this.playerDirector = new PlayerDirector(this.gameState, 1, this.pathfinding);
-    
-    this.directorPanel = new DirectorPanel(this);
-    this.directorPanel.onSettingsChange = (settings) => {
-      this.playerDirector.setSettings(settings);
-    };
-    this.directorPanel.onStrategySelect = (strategyId) => {
-      this.playerDirector.selectStrategy(strategyId);
-    };
-    this.directorPanel.onEditStrategy = () => {
-      const currentStrategy = this.playerDirector.getCurrentStrategy();
-      this.strategyEditor.show(currentStrategy);
-    };
-    
-    this.planFeed = new PlanFeed(this);
-    this.planFeed.onApprovalResponse = (_requestId, optionId) => {
-      this.playerDirector.respondToApproval(optionId);
-    };
-    
-    // 전략 편집기
-    this.strategyEditor = new StrategyEditor(this);
-    this.strategyEditor.onSave = (strategy, isNew) => {
-      if (isNew) {
-        this.playerDirector.addStrategy(strategy);
-      } else {
-        this.playerDirector.updateStrategy(strategy.id, strategy);
-      }
-    };
+      this.playerDirector = new PlayerDirector(this.gameState, this.localPlayerId, this.pathfinding);
+      
+      this.directorPanel = new DirectorPanel(this);
+      this.directorPanel.onSettingsChange = (settings) => {
+        this.playerDirector?.setSettings(settings);
+      };
+      this.directorPanel.onMapRevealToggle = (enabled) => {
+        this.setMapRevealEnabled(enabled);
+      };
+      this.directorPanel.onStrategySelect = (strategyId) => {
+        this.playerDirector?.selectStrategy(strategyId);
+      };
+      this.directorPanel.onEditStrategy = () => {
+        const currentStrategy = this.playerDirector?.getCurrentStrategy();
+        if (currentStrategy) {
+          this.strategyEditor?.show(currentStrategy);
+        }
+      };
+      
+      this.planFeed = new PlanFeed(this);
+      this.planFeed.onApprovalResponse = (_requestId, optionId) => {
+        this.playerDirector?.respondToApproval(optionId);
+      };
+      
+      this.reportFeed = new ReportFeed(this);
+      
+      // 전략 편집기
+      this.strategyEditor = new StrategyEditor(this);
+      this.strategyEditor.onSave = (strategy, isNew) => {
+        if (isNew) {
+          this.playerDirector?.addStrategy(strategy);
+        } else {
+          this.playerDirector?.updateStrategy(strategy.id, strategy);
+        }
+      };
     this.strategyEditor.onDelete = (strategyId) => {
-      this.playerDirector.deleteStrategy(strategyId);
+      this.playerDirector?.deleteStrategy(strategyId);
     };
     
     // 전투 이벤트 구독 (이펙트 연동)
@@ -318,6 +406,11 @@ export class GameScene extends Phaser.Scene {
     
     // 게임 시작
     this.gameLoop.start();
+
+    this.input.once('pointerdown', () => {
+      soundManager.resume();
+      soundManager.startAmbient();
+    });
     
     console.log('Game started!');
   }
@@ -331,6 +424,7 @@ export class GameScene extends Phaser.Scene {
     
     // 엔티티 렌더링 업데이트
     const entities = this.gameState.getAllEntities();
+    this.handleCompletionSounds(entities);
     this.unitRenderer.updateEntities(entities);
     this.buildingRenderer.updateEntities(entities);
     this.resourceRenderer.updateEntities(entities);
@@ -348,9 +442,12 @@ export class GameScene extends Phaser.Scene {
     this.hud.update();
     
     // 감독 모드 UI 업데이트
-    const planSnapshot = this.playerDirector.getPlanSnapshot();
-    this.directorPanel.update(planSnapshot);
-    this.planFeed.update(planSnapshot);
+    if (this.playerDirector && this.directorPanel && this.planFeed) {
+      const planSnapshot = this.playerDirector.getPlanSnapshot();
+      this.directorPanel.update(planSnapshot);
+      this.planFeed.update(planSnapshot);
+      this.reportFeed?.update(planSnapshot);
+    }
     
     // 카메라 업데이트
     this.updateCamera();
@@ -369,7 +466,7 @@ export class GameScene extends Phaser.Scene {
     }
     
     // 플레이어 감독 모드 업데이트 (매 틱)
-    this.playerDirector.update();
+    this.playerDirector?.update();
   }
 
   // ==========================================
@@ -408,26 +505,41 @@ export class GameScene extends Phaser.Scene {
     this.scene.start('MenuScene');
   }
 
-  // 맵 렌더링
+  // 맵 렌더링 (Phaser Tilemap 사용 - GPU 최적화)
   private renderMap(): void {
     const { mapWidth, mapHeight, tileSize } = this.gameState.config;
+    const tileCount = this.registry.get('mapTileCount') || 28;
     
-    const graphics = this.add.graphics();
-    graphics.setDepth(0);
+    // 타일맵 생성을 위한 RNG (결정론적 맵 생성)
+    const rng = new Phaser.Math.RandomDataGenerator([this.mapSeed.toString()]);
     
-    // 배경 색상
-    graphics.fillStyle(0x1a1a1a);
-    graphics.fillRect(0, 0, mapWidth * tileSize, mapHeight * tileSize);
-    
-    // 그리드 라인
-    graphics.lineStyle(1, 0x333333, 0.3);
-    
-    for (let y = 0; y <= mapHeight; y++) {
-      graphics.lineBetween(0, y * tileSize, mapWidth * tileSize, y * tileSize);
+    // 2D 타일 데이터 배열 생성 (랜덤 타일 인덱스)
+    const mapData: number[][] = [];
+    for (let y = 0; y < mapHeight; y++) {
+      mapData[y] = [];
+      for (let x = 0; x < mapWidth; x++) {
+        mapData[y][x] = rng.between(0, tileCount - 1);
+      }
     }
     
-    for (let x = 0; x <= mapWidth; x++) {
-      graphics.lineBetween(x * tileSize, 0, x * tileSize, mapHeight * tileSize);
+    // Phaser Tilemap 생성
+    const map = this.make.tilemap({
+      data: mapData,
+      tileWidth: tileSize,
+      tileHeight: tileSize
+    });
+    
+    // BootScene에서 미리 생성한 타일셋 사용
+    const tileset = map.addTilesetImage('map_tileset', 'map_tileset', tileSize, tileSize, 0, 0);
+    if (!tileset) {
+      console.error('Failed to load map_tileset');
+      return;
+    }
+    
+    // 레이어 생성 (GPU 배칭으로 빠름)
+    const layer = map.createLayer(0, tileset, 0, 0);
+    if (layer) {
+      layer.setDepth(0);
     }
   }
 
@@ -461,16 +573,20 @@ export class GameScene extends Phaser.Scene {
       }
     });
     
-    // 마우스 휠 줌
-    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: unknown[], _deltaX: number, deltaY: number) => {
-      const zoomSpeed = 0.1;
-      if (deltaY > 0) {
-        this.cameraZoom = Math.max(0.5, this.cameraZoom - zoomSpeed);
-      } else {
-        this.cameraZoom = Math.min(2, this.cameraZoom + zoomSpeed);
-      }
+    if (!this.lockCameraZoom) {
+      this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: unknown[], _deltaX: number, deltaY: number) => {
+        const zoomSpeed = 0.1;
+        if (deltaY > 0) {
+          this.cameraZoom = Math.max(0.5, this.cameraZoom - zoomSpeed);
+        } else {
+          this.cameraZoom = Math.min(2, this.cameraZoom + zoomSpeed);
+        }
+        this.cameras.main.setZoom(this.cameraZoom);
+      });
+    } else {
+      this.cameraZoom = 1;
       this.cameras.main.setZoom(this.cameraZoom);
-    });
+    }
 
     // 키보드 단축키
     // ESC는 프롬프트 닫기에도 사용되므로 별도 처리
@@ -576,6 +692,11 @@ export class GameScene extends Phaser.Scene {
         this.trainUnit(UnitType.SIEGE_TANK);
       }
     });
+
+    this.input.keyboard?.on('keydown-Z', () => {
+      if (this.promptInput?.isOpen()) return;
+      this.toggleMapReveal();
+    });
   }
 
   // 카메라 설정
@@ -583,8 +704,24 @@ export class GameScene extends Phaser.Scene {
     const { mapWidth, mapHeight, tileSize } = this.gameState.config;
     
     this.cameras.main.setBounds(0, 0, mapWidth * tileSize, mapHeight * tileSize);
+    this.cameras.main.setZoom(this.cameraZoom);
     // 플레이어 1 베이스 중심 (커맨드센터 위치: 6*32, 8*32)
     this.cameras.main.centerOn(6 * tileSize, 8 * tileSize);
+  }
+
+  private applyMapVisibilityMode(): void {
+    this.visionSystem.setRevealAll(this.mapRevealEnabled);
+    this.visionSystem.setShowExplored(this.mapRevealEnabled);
+  }
+
+  public setMapRevealEnabled(enabled: boolean): void {
+    this.mapRevealEnabled = enabled;
+    this.applyMapVisibilityMode();
+    console.log(`Map reveal: ${this.mapRevealEnabled ? 'ON' : 'OFF (vision only)'}`);
+  }
+
+  private toggleMapReveal(): void {
+    this.setMapRevealEnabled(!this.mapRevealEnabled);
   }
 
   // 카메라 업데이트 (방향키 + 엣지 스크롤)
@@ -657,8 +794,8 @@ export class GameScene extends Phaser.Scene {
     }).length;
   }
 
-  private endGame(winnerId: number, result: string): void {
-    this.gameState.endGame(winnerId);
+  private endGame(_winnerId: number, result: string): void {
+    this.gameState.endGame(_winnerId);
     this.gameLoop.stop();
 
     this.gameOverText.setText(`${result}\n\nPress ESC to return to menu`);
@@ -693,6 +830,7 @@ export class GameScene extends Phaser.Scene {
   // 유닛 생산
   private trainUnit(unitType: UnitType): void {
     console.log('=== trainUnit called ===', unitType);
+
     const selected = this.selectionManager.getSelectedEntities();
     if (selected.length === 0) {
       console.log('No selection');
@@ -755,6 +893,7 @@ export class GameScene extends Phaser.Scene {
   // 업그레이드 연구
   private startResearch(upgradeType: UpgradeType): void {
     console.log('=== startResearch called ===', upgradeType);
+
     const selected = this.selectionManager.getSelectedEntities();
     if (selected.length === 0) {
       console.log('No selection');
@@ -851,8 +990,12 @@ export class GameScene extends Phaser.Scene {
     this.minimap.destroy();
     this.hud.destroy();
     this.pauseMenu.destroy();
-    this.promptInput.destroy();
+    this.promptInput?.destroy();
+    this.planFeed?.destroy();
+    this.reportFeed?.destroy();
+    this.directorPanel?.destroy();
     this.buildingPlacer.destroy();
+    soundManager.stopAmbient();
   }
 
   // 외부에서 이펙트 접근 (CombatSystem 연동용)
@@ -918,5 +1061,48 @@ export class GameScene extends Phaser.Scene {
         soundManager.play('hit');
       }
     });
+  }
+
+  private handleCompletionSounds(entities: Entity[]): void {
+    if (!this.completionTrackingReady) {
+      for (const entity of entities) {
+        const building = entity.getComponent<Building>(Building);
+        if (building && !building.isConstructing) {
+          this.completedBuildings.add(entity.id);
+        }
+
+        const unit = entity.getComponent<Unit>(Unit);
+        if (unit) {
+          this.knownUnits.add(entity.id);
+        }
+      }
+      this.completionTrackingReady = true;
+      return;
+    }
+
+    const now = this.time.now;
+
+    for (const entity of entities) {
+      const owner = entity.getComponent<Owner>(Owner);
+      if (owner?.playerId !== this.localPlayerId) continue;
+
+      const building = entity.getComponent<Building>(Building);
+      if (building && !building.isConstructing && !this.completedBuildings.has(entity.id)) {
+        if (now - this.lastBuildingCompleteTime > 900) {
+          soundManager.play('building_complete');
+          this.lastBuildingCompleteTime = now;
+        }
+        this.completedBuildings.add(entity.id);
+      }
+
+      const unit = entity.getComponent<Unit>(Unit);
+      if (unit && !this.knownUnits.has(entity.id)) {
+        if (now - this.lastUnitCompleteTime > 500) {
+          soundManager.play('unit_complete');
+          this.lastUnitCompleteTime = now;
+        }
+        this.knownUnits.add(entity.id);
+      }
+    }
   }
 }

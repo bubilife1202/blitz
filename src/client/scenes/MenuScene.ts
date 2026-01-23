@@ -67,12 +67,14 @@ export class MenuScene extends Phaser.Scene {
     });
     subtitle.setOrigin(0.5);
 
-    // 6. 메인 버튼들 (초기 애니메이션 적용)
-    const startBtn = this.createTechButton(width / 2, height / 2 + 60, 'DEPLOY MISSION', () => {
+    // 6. 메인 버튼 (초기 애니메이션 적용)
+    const startBtn = this.createTechButton(width / 2, height / 2 + 40, 'DEPLOY MISSION', () => {
       this.showDifficultySelection();
     });
     
-    const multiBtn = this.createTechButton(width / 2, height / 2 + 130, 'MULTIPLAYER', () => {}, true);
+    const multiBtn = this.createTechButton(width / 2, height / 2 + 110, 'MULTIPLAYER', () => {
+      this.scene.start('LobbyScene');
+    });
     
     this.mainButtons.push(startBtn, multiBtn);
 

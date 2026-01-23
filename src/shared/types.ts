@@ -117,6 +117,8 @@ export interface GameCommand {
   buildingType?: BuildingType;
   unitType?: UnitType;
   upgradeType?: UpgradeType;
+  entityTargets?: Record<EntityId, Vector2>;
+  entityPaths?: Record<EntityId, Vector2[]>;
   tick: number; // 명령이 실행될 틱
 }
 

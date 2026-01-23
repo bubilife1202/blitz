@@ -3,7 +3,7 @@
 // ==========================================
 
 import Phaser from 'phaser';
-import { BootScene, MenuScene, GameScene } from './scenes';
+import { BootScene, MenuScene, GameScene, LobbyScene } from './scenes';
 
 // Phaser 게임 설정
 const config: Phaser.Types.Core.GameConfig = {
@@ -12,7 +12,7 @@ const config: Phaser.Types.Core.GameConfig = {
   width: 1280,
   height: 720,
   backgroundColor: '#000000',
-  scene: [BootScene, MenuScene, GameScene],
+  scene: [BootScene, MenuScene, LobbyScene, GameScene],
   physics: {
     default: 'arcade',
     arcade: {
