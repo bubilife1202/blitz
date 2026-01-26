@@ -15,6 +15,7 @@ import { UnitType, type PlayerId } from '@shared/types';
 import type { VisionSystem } from '@core/systems/VisionSystem';
 
 interface UnitVisual {
+  shadow: Phaser.GameObjects.Ellipse; // 그림자 추가
   sprite: Phaser.GameObjects.Sprite;
   selectionCircle: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
@@ -210,7 +211,11 @@ export class UnitRenderer {
     const effectsGraphics = this.scene.add.graphics();
     effectsGraphics.setDepth(12);
 
-    return { sprite, selectionCircle, hpBar, effectsGraphics };
+    // 그림자 생성 (유닛보다 아래)
+    const shadow = this.scene.add.ellipse(0, 0, 24, 12, 0x000000, 0.4);
+    shadow.setDepth(5);
+
+    return { sprite, selectionCircle, hpBar, effectsGraphics, shadow };
   }
 
   private updateVisual(visual: UnitVisual, entity: Entity): void {
@@ -223,6 +228,23 @@ export class UnitRenderer {
     const combat = entity.getComponent<Combat>(Combat);
 
     const playerId = owner?.playerId ?? 1;
+
+    // 그림자 업데이트
+    // Speeder(Vulture)는 호버링 유닛이라 그림자가 약간 아래에 위치
+    const isHoverUnit = unit.unitType === UnitType.SPEEDER;
+    const shadowOffsetY = isHoverUnit ? 10 : 2;
+    visual.shadow.setPosition(position.x, position.y + shadowOffsetY);
+    
+    // 유닛 크기에 따른 그림자 크기 조절
+    if (unit.unitType === UnitType.ARTILLERY) {
+      visual.shadow.setSize(36, 18);
+    } else if (unit.unitType === UnitType.WALKER) {
+      visual.shadow.setSize(30, 15);
+    } else if (unit.unitType === UnitType.SPEEDER) {
+      visual.shadow.setSize(28, 14);
+    } else {
+      visual.shadow.setSize(22, 11);
+    }
     
     // 스프라이트 프레임 업데이트 (시즈 탱크 모드 전환 등)
     if (this.useSprites) {
@@ -365,6 +387,7 @@ export class UnitRenderer {
     visual.selectionCircle.setVisible(visible);
     visual.hpBar.setVisible(visible);
     visual.effectsGraphics.setVisible(visible);
+    visual.shadow.setVisible(visible);
   }
 
   private destroyVisual(visual: UnitVisual): void {
@@ -372,6 +395,7 @@ export class UnitRenderer {
     visual.selectionCircle.destroy();
     visual.hpBar.destroy();
     visual.effectsGraphics.destroy();
+    visual.shadow.destroy();
   }
 
   destroy(): void {

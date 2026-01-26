@@ -10,9 +10,11 @@ import { Owner } from '@core/components/Owner';
 import { Building } from '@core/components/Building';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { BuildingType, type PlayerId } from '@shared/types';
+import { BUILDING_STATS } from '@shared/constants';
 import type { VisionSystem } from '@core/systems/VisionSystem';
 
 interface BuildingVisual {
+  shadow: Phaser.GameObjects.Ellipse; // 그림자 추가
   sprite: Phaser.GameObjects.Sprite;
   selectionRect: Phaser.GameObjects.Graphics;
   hpBar: Phaser.GameObjects.Graphics;
@@ -111,6 +113,7 @@ export class BuildingRenderer {
     visual.progressBar.setVisible(visible);
     visual.productionLabel.setVisible(visible);
     visual.constructionOverlay.setVisible(visible);
+    visual.shadow.setVisible(visible);
   }
 
   private createVisual(entity: Entity): BuildingVisual {
@@ -131,6 +134,10 @@ export class BuildingRenderer {
     }
     
     sprite.setDepth(5);
+
+    // 그림자 생성 (건물보다 아래)
+    const shadow = this.scene.add.ellipse(0, 0, 60, 30, 0x000000, 0.4);
+    shadow.setDepth(3); // selectionRect(4)보다 아래
 
     const selectionRect = this.scene.add.graphics();
     selectionRect.setDepth(4);
@@ -153,7 +160,7 @@ export class BuildingRenderer {
     const constructionOverlay = this.scene.add.graphics();
     constructionOverlay.setDepth(6);
 
-    return { sprite, selectionRect, hpBar, progressBar, productionLabel, constructionOverlay };
+    return { sprite, selectionRect, hpBar, progressBar, productionLabel, constructionOverlay, shadow };
   }
 
   private updateVisual(visual: BuildingVisual, entity: Entity): void {
@@ -164,12 +171,18 @@ export class BuildingRenderer {
     const queue = entity.getComponent<ProductionQueue>(ProductionQueue);
 
     const playerId = owner?.playerId ?? 1;
-    
-    // 건물 크기 계산
-    const width = building.width * 32;
-    const height = building.height * 32;
 
-    // 위치
+    // 그림자 업데이트
+    const stats = BUILDING_STATS[building.buildingType];
+    const width = stats.size.width * 32;
+    const height = stats.size.height * 32;
+    
+    // 건물 크기에 비례하여 그림자 크기 조절
+    const shadowW = width * 1.2;
+    const shadowH = height * 0.6;
+    visual.shadow.setPosition(position.x, position.y + 5);
+    visual.shadow.setSize(shadowW, shadowH);
+
     visual.sprite.setPosition(position.x, position.y);
     visual.selectionRect.setPosition(position.x, position.y);
     visual.hpBar.setPosition(position.x, position.y);
@@ -286,6 +299,7 @@ export class BuildingRenderer {
     visual.progressBar.destroy();
     visual.productionLabel.destroy();
     visual.constructionOverlay.destroy();
+    visual.shadow.destroy();
   }
 
   destroy(): void {

@@ -542,6 +542,8 @@ export class GameScene extends Phaser.Scene {
     const layer = map.createLayer(0, tileset, 0, 0);
     if (layer) {
       layer.setDepth(0);
+      // 배경을 어둡게 (66% 밝기) - 유닛을 돋보이게 함
+      layer.setTint(0xaaaaaa);
     }
   }
 
