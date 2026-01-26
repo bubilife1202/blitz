@@ -46,6 +46,9 @@ export class GameState {
   // 대기 중인 명령 (틱별로 그룹화)
   private pendingCommands: Map<number, GameCommand[]> = new Map();
   
+  // 엔티티 배열 캐시 (getAllEntities 최적화)
+  private entitiesCache: Entity[] | null = null;
+  
   // 게임 종료 여부
   private gameOver: boolean = false;
   private winnerId: PlayerId | null = null;
@@ -73,6 +76,7 @@ export class GameState {
   createEntity(): Entity {
     const entity = new Entity(this.nextEntityId++);
     this.entities.set(entity.id, entity);
+    this.entitiesCache = null;
     return entity;
   }
 
@@ -81,24 +85,32 @@ export class GameState {
   }
 
   getAllEntities(): Entity[] {
-    return Array.from(this.entities.values());
+    if (!this.entitiesCache) {
+      this.entitiesCache = Array.from(this.entities.values());
+    }
+    return this.entitiesCache;
   }
 
   removeEntity(id: EntityId): boolean {
     const entity = this.entities.get(id);
     if (entity) {
       entity.destroy();
+      this.entitiesCache = null;
       return this.entities.delete(id);
     }
     return false;
   }
 
-  // 파괴된 엔티티 정리
   cleanupDestroyedEntities(): void {
+    let removed = false;
     for (const [id, entity] of this.entities) {
       if (entity.isDestroyed()) {
         this.entities.delete(id);
+        removed = true;
       }
+    }
+    if (removed) {
+      this.entitiesCache = null;
     }
   }
 

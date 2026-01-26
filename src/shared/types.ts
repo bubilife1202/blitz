@@ -12,11 +12,10 @@ export interface Vector2 {
   y: number;
 }
 
-// 종족 타입
 export enum Race {
-  TERRAN = 'terran',
-  PROTOSS = 'protoss',
-  ZERG = 'zerg',
+  VANGUARD = 'vanguard',
+  LUMINARI = 'luminari',
+  HIVEMIND = 'hivemind',
 }
 
 // AI 난이도
@@ -26,57 +25,45 @@ export enum AIDifficulty {
   HARD = 'hard',
 }
 
-// 유닛 타입
 export enum UnitType {
-  // Terran - Infantry
-  SCV = 'scv',
-  MARINE = 'marine',
-  FIREBAT = 'firebat',
+  ENGINEER = 'engineer',
+  TROOPER = 'trooper',
+  PYRO = 'pyro',
   MEDIC = 'medic',
-  // Terran - Vehicles
-  VULTURE = 'vulture',
-  SIEGE_TANK = 'siege_tank',
-  GOLIATH = 'goliath',
+  SPEEDER = 'speeder',
+  ARTILLERY = 'artillery',
+  WALKER = 'walker',
 }
 
-// 건물 타입
 export enum BuildingType {
-  // Terran - Basic
-  COMMAND_CENTER = 'command_center',
-  SUPPLY_DEPOT = 'supply_depot',
+  HQ = 'hq',
+  DEPOT = 'depot',
   REFINERY = 'refinery',
-  // Terran - Production
   BARRACKS = 'barracks',
   FACTORY = 'factory',
-  // Terran - Tech
-  ENGINEERING_BAY = 'engineering_bay',
+  TECH_LAB = 'tech_lab',
   ARMORY = 'armory',
-  // Terran - Defense
   BUNKER = 'bunker',
-  MISSILE_TURRET = 'missile_turret',
+  TURRET = 'turret',
 }
 
-// 업그레이드 타입
 export enum UpgradeType {
-  // Infantry Upgrades (Engineering Bay)
   INFANTRY_WEAPONS_1 = 'infantry_weapons_1',
   INFANTRY_WEAPONS_2 = 'infantry_weapons_2',
   INFANTRY_WEAPONS_3 = 'infantry_weapons_3',
   INFANTRY_ARMOR_1 = 'infantry_armor_1',
   INFANTRY_ARMOR_2 = 'infantry_armor_2',
   INFANTRY_ARMOR_3 = 'infantry_armor_3',
-  // Vehicle Upgrades (Armory)
   VEHICLE_WEAPONS_1 = 'vehicle_weapons_1',
   VEHICLE_WEAPONS_2 = 'vehicle_weapons_2',
   VEHICLE_WEAPONS_3 = 'vehicle_weapons_3',
   VEHICLE_ARMOR_1 = 'vehicle_armor_1',
   VEHICLE_ARMOR_2 = 'vehicle_armor_2',
   VEHICLE_ARMOR_3 = 'vehicle_armor_3',
-  // Special Upgrades
   STIM_PACK = 'stim_pack',
-  U238_SHELLS = 'u238_shells', // Marine range +1
-  SIEGE_TECH = 'siege_tech', // Siege Tank siege mode
-  ION_THRUSTERS = 'ion_thrusters', // Vulture speed
+  EXTENDED_RANGE = 'extended_range',
+  BOMBARDMENT_MODE = 'bombardment_mode',
+  BOOSTERS = 'boosters',
 }
 
 // 자원 타입
@@ -103,8 +90,8 @@ export enum CommandType {
   TRAIN = 'train',
   GATHER = 'gather',
   RESEARCH = 'research',
-  SIEGE = 'siege', // Siege Tank mode toggle
-  STIM = 'stim', // Stim pack activation
+  BOMBARDMENT = 'bombardment',
+  STIM = 'stim',
 }
 
 // 게임 명령 인터페이스
@@ -128,6 +115,7 @@ export interface GameConfig {
   mapHeight: number;
   tileSize: number;
   tickRate: number; // 초당 틱 수
+  mapId?: string; // 맵 ID (예: 'city_warfare', 'volcanic_highlands', 'desert_outpost')
 }
 
 // 게임 상태 스냅샷 (동기화용)

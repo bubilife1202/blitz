@@ -19,12 +19,14 @@ import { ProductionQueue } from '@core/components/ProductionQueue';
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { Resource } from '@core/components/Resource';
 import { UNIT_STATS, BUILDING_STATS, MINERAL_AMOUNT, MINERAL_GATHER_RATE, GAS_AMOUNT, GAS_GATHER_RATE } from '@shared/constants';
+import { type GameMap, getMap, getRandomMap } from '@shared/maps';
 
 export class LocalHost {
   private gameState: GameState;
   private pathfinding: PathfindingService | null;
   private aiCount: number = 1;
   private humanPlayers: Set<number> = new Set([1]);
+  private currentMap: GameMap | null = null;
 
   constructor(gameState: GameState, pathfinding?: PathfindingService) {
     this.gameState = gameState;
@@ -43,28 +45,34 @@ export class LocalHost {
     return this.aiCount;
   }
 
+  getCurrentMap(): GameMap | null {
+    return this.currentMap;
+  }
+
   setupInitialEntities(): void {
     console.log(`LocalHost: Setting up initial entities (1 vs ${this.aiCount})...`);
 
     const tileSize = this.gameState.config.tileSize;
-    const mapSize = this.gameState.config.mapWidth * tileSize;
+    const mapId = this.gameState.config.mapId;
+    
+    // 맵 데이터 로드 (mapId가 없으면 랜덤 맵)
+    this.currentMap = mapId ? getMap(mapId) || getRandomMap() : getRandomMap();
+    console.log(`LocalHost: Using map "${this.currentMap.name}" (${this.currentMap.id})`);
 
-    // 시작 위치 정의 (4개 모서리)
-    const startPositions = [
-      { x: 6, y: 8 },                    // 좌상단 (플레이어 1)
-      { x: mapSize / tileSize - 8, y: mapSize / tileSize - 10 }, // 우하단 (AI 1)
-      { x: mapSize / tileSize - 8, y: 8 },  // 우상단 (AI 2)
-      { x: 6, y: mapSize / tileSize - 10 }, // 좌하단 (AI 3)
-    ];
+    // 배치 모드 시작
+    if (this.pathfinding) {
+      this.pathfinding.beginBatch();
+    }
 
-    // 미네랄 오프셋 (베이스 기준)
-    const mineralOffsets = [
-      { dx: -4, dy: -5 },  // 좌상단용
-      { dx: 2, dy: 7 },    // 우하단용
-      { dx: 2, dy: -5 },   // 우상단용
-      { dx: -4, dy: 7 },   // 좌하단용
-    ];
+    // 맵 지형을 패스파인딩에 적용
+    if (this.currentMap && this.pathfinding) {
+      this.pathfinding.applyTerrainFromMap(this.currentMap);
+    }
 
+    // 플레이어 슬롯 설정
+    const totalPlayers = 1 + this.aiCount;
+    const startLocations = this.currentMap.startLocations.slice(0, totalPlayers);
+    
     const playerSlots: Array<{ id: number; positionIndex: number }> = [{ id: 1, positionIndex: 0 }];
     for (let i = 0; i < this.aiCount; i++) {
       playerSlots.push({ id: 2 + i, positionIndex: i + 1 });
@@ -79,21 +87,18 @@ export class LocalHost {
       });
     }
 
-    // 배치 모드 시작
-    if (this.pathfinding) {
-      this.pathfinding.beginBatch();
-    }
-
+    // 플레이어 베이스 및 자원 배치
     for (const slot of playerSlots) {
       const isHuman = this.humanPlayers.has(slot.id);
-      this.setupPlayerBase(
-        slot.id,
-        startPositions[slot.positionIndex],
-        mineralOffsets[slot.positionIndex],
-        tileSize,
-        isHuman
-      );
+      const startLoc = startLocations[slot.positionIndex];
+      
+      if (startLoc) {
+        this.setupPlayerBaseFromMap(slot.id, startLoc, tileSize, isHuman);
+      }
     }
+
+    // 확장 자원 배치
+    this.setupExpansions(tileSize);
 
     // 배치 모드 종료
     if (this.pathfinding) {
@@ -103,48 +108,65 @@ export class LocalHost {
     console.log(`Created ${this.gameState.getAllEntities().length} entities`);
   }
 
-  private setupPlayerBase(
+  // 맵 데이터 기반 플레이어 베이스 설정
+  private setupPlayerBaseFromMap(
     playerId: number,
-    basePos: { x: number; y: number },
-    mineralOffset: { dx: number; dy: number },
+    startLoc: { x: number; y: number; resources: Array<{ x: number; y: number; type: string; amount?: number }> },
     tileSize: number,
     isHuman: boolean
   ): void {
-    const baseX = basePos.x * tileSize;
-    const baseY = basePos.y * tileSize;
+    const baseX = startLoc.x * tileSize;
+    const baseY = startLoc.y * tileSize;
 
     // 커맨드 센터
-    this.createBuilding(BuildingType.COMMAND_CENTER, playerId, baseX, baseY, true);
+    this.createBuilding(BuildingType.HQ, playerId, baseX, baseY, true);
     // 배럭
     this.createBuilding(BuildingType.BARRACKS, playerId, baseX + 6 * tileSize, baseY, true);
 
     // 인간 플레이어는 서플라이 디팟 추가
     if (isHuman) {
-      this.createBuilding(BuildingType.SUPPLY_DEPOT, playerId, baseX - 3 * tileSize, baseY, true);
+      this.createBuilding(BuildingType.DEPOT, playerId, baseX - 3 * tileSize, baseY, true);
     }
 
     // SCV
     const scvCount = isHuman ? 4 : 2;
     for (let i = 0; i < scvCount; i++) {
-      this.createUnit(UnitType.SCV, playerId, baseX - tileSize + i * tileSize, baseY - 3 * tileSize);
+      this.createUnit(UnitType.ENGINEER, playerId, baseX - tileSize + i * tileSize, baseY - 3 * tileSize);
     }
 
     // 마린
     const marineCount = 4;
     for (let i = 0; i < marineCount; i++) {
-      this.createUnit(UnitType.MARINE, playerId, baseX + 4 * tileSize + i * tileSize, baseY - 3 * tileSize);
+      this.createUnit(UnitType.TROOPER, playerId, baseX + 4 * tileSize + i * tileSize, baseY - 3 * tileSize);
     }
 
-    // 미네랄
-    const mineralBaseX = baseX + mineralOffset.dx * tileSize;
-    const mineralBaseY = baseY + mineralOffset.dy * tileSize;
-    for (let i = 0; i < 8; i++) {
-      this.createMineral(mineralBaseX + i * tileSize, mineralBaseY);
+    // 시작 위치 자원 배치
+    for (const res of startLoc.resources) {
+      const resX = res.x * tileSize;
+      const resY = res.y * tileSize;
+      if (res.type === 'minerals') {
+        this.createMineral(resX, resY, res.amount);
+      } else if (res.type === 'gas') {
+        this.createGasGeyser(resX, resY, res.amount);
+      }
     }
+  }
 
-    // 가스
-    this.createGasGeyser(mineralBaseX + 9 * tileSize, mineralBaseY);
-    this.createGasGeyser(mineralBaseX + 10 * tileSize, mineralBaseY);
+  // 확장 자원 배치
+  private setupExpansions(tileSize: number): void {
+    if (!this.currentMap) return;
+
+    for (const expansion of this.currentMap.expansions) {
+      for (const res of expansion.resources) {
+        const resX = res.x * tileSize;
+        const resY = res.y * tileSize;
+        if (res.type === 'minerals') {
+          this.createMineral(resX, resY, res.amount);
+        } else if (res.type === 'gas') {
+          this.createGasGeyser(resX, resY, res.amount);
+        }
+      }
+    }
   }
 
   private createUnit(unitType: UnitType, playerId: number, x: number, y: number): void {
@@ -159,7 +181,7 @@ export class LocalHost {
       .addComponent(new Movement(stats.moveSpeed * 32))
       .addComponent(new Combat());
 
-    if (unitType === UnitType.SCV) {
+    if (unitType === UnitType.ENGINEER) {
       entity.addComponent(new Gatherer(8));
       entity.addComponent(new Builder());
     }
@@ -200,28 +222,28 @@ export class LocalHost {
 
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
-          this.pathfinding.setObstacle(tileX + dx - 1, tileY + dy - 1);
+          this.pathfinding.setObstacle(tileX + dx, tileY + dy);
         }
       }
     }
   }
 
-  private createMineral(x: number, y: number): void {
+  private createMineral(x: number, y: number, amount?: number): void {
     const entity = this.gameState.createEntity();
 
     entity
       .addComponent(new Position(x, y))
       .addComponent(new Selectable(12))
-      .addComponent(new Resource(ResourceType.MINERALS, MINERAL_AMOUNT, MINERAL_GATHER_RATE));
+      .addComponent(new Resource(ResourceType.MINERALS, amount ?? MINERAL_AMOUNT, MINERAL_GATHER_RATE));
   }
 
-  private createGasGeyser(x: number, y: number): void {
+  private createGasGeyser(x: number, y: number, amount?: number): void {
     const entity = this.gameState.createEntity();
 
     entity
       .addComponent(new Position(x, y))
       .addComponent(new Selectable(16))
-      .addComponent(new Resource(ResourceType.GAS, GAS_AMOUNT, GAS_GATHER_RATE));
+      .addComponent(new Resource(ResourceType.GAS, amount ?? GAS_AMOUNT, GAS_GATHER_RATE));
   }
 
   receiveCommand(command: GameCommand): void {

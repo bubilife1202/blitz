@@ -9,7 +9,7 @@ import { Position } from '../components/Position';
 import { Owner } from '../components/Owner';
 import { Unit } from '../components/Unit';
 import { Building } from '../components/Building';
-import { BUILDING_STATS, UNIT_STATS } from '@shared/constants';
+import { BUILDING_STATS, UNIT_STATS, TICK_RATE } from '@shared/constants';
 import { combatEvents } from '../events/CombatEvents';
 import { BuildingType } from '@shared/types';
 
@@ -70,7 +70,7 @@ export class DefenseSystem extends System {
       this.attack(entity, target, position, stats.damage, gameState, 'missile');
       
       // 쿨다운 설정 (attackSpeed 기반)
-      const cooldownTicks = Math.floor(16 / (stats.attackSpeed || 1));
+      const cooldownTicks = Math.floor(TICK_RATE / (stats.attackSpeed || 1));
       this.defenseCooldowns.set(cooldownKey, cooldownTicks);
     }
   }
@@ -122,7 +122,7 @@ export class DefenseSystem extends System {
       
       // 프로젝타일 타입 결정
       let projectileType: 'bullet' | 'flame' | 'missile' = 'bullet';
-      if (unitComp.unitType === 'firebat') {
+      if (unitComp.unitType === 'pyro') {
         projectileType = 'flame';
       }
       
@@ -131,7 +131,7 @@ export class DefenseSystem extends System {
       
       // 쿨다운 설정 (0 방지)
       const attackSpeed = unitStats.attackSpeed || 1;
-      const cooldownTicks = Math.floor(16 / attackSpeed);
+      const cooldownTicks = Math.floor(TICK_RATE / attackSpeed);
       this.defenseCooldowns.set(cooldownKey, cooldownTicks);
     }
   }
@@ -205,9 +205,9 @@ export class DefenseSystem extends System {
       });
 
       if (targetUnit.isDead()) {
-        const size = targetUnit.unitType === 'siege_tank' ? 16
-          : targetUnit.unitType === 'goliath' ? 14
-          : targetUnit.unitType === 'vulture' ? 14
+        const size = targetUnit.unitType === 'artillery' ? 16
+          : targetUnit.unitType === 'walker' ? 14
+          : targetUnit.unitType === 'speeder' ? 14
           : 10;
         combatEvents.emitDeath({
           x: targetPos.x,

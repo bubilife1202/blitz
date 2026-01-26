@@ -16,7 +16,7 @@ import { Unit } from '@core/components/Unit';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { Resource } from '@core/components/Resource';
-import { BUILDING_STATS, UNIT_STATS, UPGRADE_STATS, canTrainUnit } from '@shared/constants';
+import { BUILDING_STATS, UNIT_STATS, UPGRADE_STATS, canTrainUnit, secondsToTicks } from '@shared/constants';
 import {
   BuildingType,
   CommandType,
@@ -61,7 +61,7 @@ export class CommandExecutor {
       case CommandType.RESEARCH:
         this.executeResearch(command);
         return;
-      case CommandType.SIEGE:
+      case CommandType.BOMBARDMENT:
         this.executeSiege(command);
         return;
       case CommandType.STIM:
@@ -252,7 +252,7 @@ export class CommandExecutor {
       minerals: -stats.mineralCost,
       gas: -stats.gasCost,
     });
-    queue.addToQueue(command.unitType, stats.buildTime);
+    queue.addToQueue(command.unitType, secondsToTicks(stats.buildTime));
   }
 
   private executeResearch(command: GameCommand): void {
@@ -284,7 +284,7 @@ export class CommandExecutor {
       minerals: -stats.mineralCost,
       gas: -stats.gasCost,
     });
-    researchQueue.startResearch(command.upgradeType, stats.researchTime);
+    researchQueue.startResearch(command.upgradeType, secondsToTicks(stats.researchTime));
   }
 
   private executeSiege(command: GameCommand): void {
@@ -292,7 +292,7 @@ export class CommandExecutor {
       const entity = this.gameState.getEntity(entityId);
       if (!entity) continue;
       const unit = entity.getComponent<Unit>(Unit);
-      if (unit?.unitType === UnitType.SIEGE_TANK) {
+      if (unit?.unitType === UnitType.ARTILLERY) {
         unit.toggleSiege();
       }
     }
@@ -304,7 +304,7 @@ export class CommandExecutor {
       if (!entity) continue;
       const unit = entity.getComponent<Unit>(Unit);
       if (!unit) continue;
-      if (unit.unitType === UnitType.MARINE || unit.unitType === UnitType.FIREBAT) {
+      if (unit.unitType === UnitType.TROOPER || unit.unitType === UnitType.PYRO) {
         unit.activateStim();
       }
     }
@@ -338,7 +338,7 @@ export class CommandExecutor {
       const position = entity.getComponent<Position>(Position);
 
       if (!building || !owner || !position) continue;
-      if (building.buildingType !== BuildingType.COMMAND_CENTER) continue;
+      if (building.buildingType !== BuildingType.HQ) continue;
       if (owner.playerId !== playerId) continue;
       if (building.isConstructing) continue;
 

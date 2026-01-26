@@ -50,16 +50,36 @@ class CombatEventBus {
     this.attackListeners.push(listener);
   }
 
+  offAttack(listener: AttackListener): void {
+    const idx = this.attackListeners.indexOf(listener);
+    if (idx !== -1) this.attackListeners.splice(idx, 1);
+  }
+
   onDeath(listener: DeathListener): void {
     this.deathListeners.push(listener);
+  }
+
+  offDeath(listener: DeathListener): void {
+    const idx = this.deathListeners.indexOf(listener);
+    if (idx !== -1) this.deathListeners.splice(idx, 1);
   }
 
   onHeal(listener: HealListener): void {
     this.healListeners.push(listener);
   }
 
+  offHeal(listener: HealListener): void {
+    const idx = this.healListeners.indexOf(listener);
+    if (idx !== -1) this.healListeners.splice(idx, 1);
+  }
+
   onHit(listener: HitListener): void {
     this.hitListeners.push(listener);
+  }
+
+  offHit(listener: HitListener): void {
+    const idx = this.hitListeners.indexOf(listener);
+    if (idx !== -1) this.hitListeners.splice(idx, 1);
   }
 
   emitAttack(event: AttackEvent): void {

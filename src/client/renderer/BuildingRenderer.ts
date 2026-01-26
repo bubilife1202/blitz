@@ -29,15 +29,15 @@ const PLAYER_TINTS: Record<PlayerId, number> = {
 
 // 건물 타입별 스프라이트 매핑
 const BUILDING_SPRITES: Record<BuildingType, { frame: string; scale: number }> = {
-  [BuildingType.COMMAND_CENTER]: { frame: 'scifiStructure_01.png', scale: 1.0 },
-  [BuildingType.SUPPLY_DEPOT]: { frame: 'scifiStructure_08.png', scale: 1.2 },
+  [BuildingType.HQ]: { frame: 'scifiStructure_01.png', scale: 1.0 },
+  [BuildingType.DEPOT]: { frame: 'scifiStructure_08.png', scale: 1.2 },
   [BuildingType.REFINERY]: { frame: 'scifiStructure_06.png', scale: 1.0 },
   [BuildingType.BARRACKS]: { frame: 'scifiStructure_07.png', scale: 1.0 },
   [BuildingType.FACTORY]: { frame: 'scifiStructure_03.png', scale: 1.0 },
-  [BuildingType.ENGINEERING_BAY]: { frame: 'scifiStructure_04.png', scale: 1.0 },
+  [BuildingType.TECH_LAB]: { frame: 'scifiStructure_04.png', scale: 1.0 },
   [BuildingType.ARMORY]: { frame: 'scifiStructure_05.png', scale: 1.0 },
   [BuildingType.BUNKER]: { frame: 'scifiStructure_11.png', scale: 1.2 },
-  [BuildingType.MISSILE_TURRET]: { frame: 'scifiStructure_09.png', scale: 1.0 },
+  [BuildingType.TURRET]: { frame: 'scifiStructure_09.png', scale: 1.0 },
 };
 
 export class BuildingRenderer {
@@ -267,7 +267,7 @@ export class BuildingRenderer {
         // 생산 중인 유닛 표시 (펄스 효과)
         const time = Date.now() / 500;
         const pulse = 0.7 + Math.sin(time) * 0.3;
-        const unitName = current.unitType === 'scv' ? 'SCV' : current.unitType === 'marine' ? 'Marine' : current.unitType;
+        const unitName = current.unitType === 'engineer' ? 'Engineer' : current.unitType === 'trooper' ? 'Trooper' : current.unitType;
         const queueLen = queue.getQueueLength();
         const queueText = queueLen > 1 ? ` (${queueLen})` : '';
         visual.productionLabel.setText(`▶ ${unitName}${queueText}`);

@@ -4,6 +4,7 @@
 
 import EasyStar from 'easystarjs';
 import type { Vector2, GameConfig } from '@shared/types';
+import { type GameMap, isWalkable as isTerrainWalkable } from '@shared/maps';
 
 export class PathfindingService {
   private easystar: EasyStar.js;
@@ -149,8 +150,33 @@ export class PathfindingService {
     return null;
   }
 
-  // EasyStar 계산 처리 (매 프레임 호출)
   update(): void {
     this.easystar.calculate();
+  }
+
+  destroy(): void {
+    this.grid = [];
+  }
+
+  // 맵 지형 데이터를 패스파인딩 그리드에 적용
+  applyTerrainFromMap(gameMap: GameMap): void {
+    const terrain = gameMap.terrain;
+    
+    for (let y = 0; y < Math.min(terrain.length, this.mapHeight); y++) {
+      for (let x = 0; x < Math.min(terrain[y].length, this.mapWidth); x++) {
+        const terrainType = terrain[y][x];
+        // 이동 불가 지형은 장애물로 설정
+        if (!isTerrainWalkable(terrainType)) {
+          this.grid[y][x] = 1; // 장애물
+        } else {
+          this.grid[y][x] = 0; // 이동 가능
+        }
+      }
+    }
+    
+    // batchMode가 아닌 경우 즉시 그리드 적용
+    if (!this.batchMode) {
+      this.easystar.setGrid(this.grid);
+    }
   }
 }

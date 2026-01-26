@@ -9,7 +9,7 @@ import { Building } from '../components/Building';
 import { Owner } from '../components/Owner';
 import { Position } from '../components/Position';
 import { Builder, BuilderState } from '../components/Builder';
-import { BUILDING_STATS } from '@shared/constants';
+import { BUILDING_STATS, secondsToTicks } from '@shared/constants';
 
 export class ConstructionSystem extends System {
   readonly requiredComponents = [Building.type, Owner.type, Position.type];
@@ -28,9 +28,9 @@ export class ConstructionSystem extends System {
         continue; // SCV가 없으면 건설 진행 안 함
       }
 
-      // 건설 진행 (틱당 일정량)
       const stats = BUILDING_STATS[building.buildingType];
-      const progressPerTick = 100 / stats.buildTime;
+      const totalTicks = secondsToTicks(stats.buildTime);
+      const progressPerTick = 100 / totalTicks;
       
       building.addConstructionProgress(progressPerTick);
 

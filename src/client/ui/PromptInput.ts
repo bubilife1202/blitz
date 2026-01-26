@@ -16,7 +16,7 @@ import { Resource } from '@core/components/Resource';
 import { Gatherer } from '@core/components/Gatherer';
 import { UnitType, BuildingType, ResourceType } from '@shared/types';
 import { ProductionQueue } from '@core/components/ProductionQueue';
-import { UNIT_STATS, BUILDING_STATS } from '@shared/constants';
+import { UNIT_STATS, BUILDING_STATS, secondsToTicks } from '@shared/constants';
 import { geminiService, type AICmd } from '../services/GeminiService';
 
 interface CommandResult {
@@ -465,8 +465,8 @@ export class PromptInput {
     }
 
     const typeMap: Record<string, BuildingType> = {
-      'depot': BuildingType.SUPPLY_DEPOT,
-      'supply': BuildingType.SUPPLY_DEPOT,
+      'depot': BuildingType.DEPOT,
+      'supply': BuildingType.DEPOT,
       'barracks': BuildingType.BARRACKS,
       'bar': BuildingType.BARRACKS,
       'factory': BuildingType.FACTORY,
@@ -475,11 +475,11 @@ export class PromptInput {
       'ref': BuildingType.REFINERY,
       'armory': BuildingType.ARMORY,
       'arm': BuildingType.ARMORY,
-      'bay': BuildingType.ENGINEERING_BAY,
-      'eng': BuildingType.ENGINEERING_BAY,
-      'cc': BuildingType.COMMAND_CENTER,
+      'bay': BuildingType.TECH_LAB,
+      'eng': BuildingType.TECH_LAB,
+      'cc': BuildingType.HQ,
       'bunker': BuildingType.BUNKER,
-      'turret': BuildingType.MISSILE_TURRET,
+      'turret': BuildingType.TURRET,
     };
 
     const buildingType = typeMap[args[0]];
@@ -497,14 +497,14 @@ export class PromptInput {
     }
 
     const typeMap: Record<string, UnitType> = {
-      'scv': UnitType.SCV,
-      'marine': UnitType.MARINE,
-      'firebat': UnitType.FIREBAT,
+      'scv': UnitType.ENGINEER,
+      'marine': UnitType.TROOPER,
+      'firebat': UnitType.PYRO,
       'medic': UnitType.MEDIC,
-      'vulture': UnitType.VULTURE,
-      'tank': UnitType.SIEGE_TANK,
-      'siege': UnitType.SIEGE_TANK,
-      'goliath': UnitType.GOLIATH,
+      'vulture': UnitType.SPEEDER,
+      'tank': UnitType.ARTILLERY,
+      'siege': UnitType.ARTILLERY,
+      'goliath': UnitType.WALKER,
     };
 
     const unitType = typeMap[args[0]];
@@ -553,7 +553,7 @@ export class PromptInput {
       if (!queue.canQueue()) continue;
       
       // 생산 시작
-      queue.addToQueue(unitType, stats.buildTime);
+      queue.addToQueue(unitType, secondsToTicks(stats.buildTime));
       this.gameState.modifyPlayerResources(this.localPlayerId, {
         minerals: -stats.mineralCost,
         gas: -stats.gasCost,
@@ -629,7 +629,7 @@ export class PromptInput {
     const selected = this.selectionManager.getSelectedEntities();
     const workers = selected.filter(e => {
       const unit = e.getComponent<Unit>(Unit);
-      return unit?.unitType === UnitType.SCV;
+      return unit?.unitType === UnitType.ENGINEER;
     });
 
     if (workers.length === 0) {
@@ -730,7 +730,7 @@ export class PromptInput {
 
     for (const entity of selected) {
       const unit = entity.getComponent<Unit>(Unit);
-      if (unit?.unitType === UnitType.SIEGE_TANK) {
+      if (unit?.unitType === UnitType.ARTILLERY) {
         unit.toggleSiege();
         toggled++;
       }
@@ -748,7 +748,7 @@ export class PromptInput {
 
     for (const entity of selected) {
       const unit = entity.getComponent<Unit>(Unit);
-      if (unit && (unit.unitType === UnitType.MARINE || unit.unitType === UnitType.FIREBAT)) {
+      if (unit && (unit.unitType === UnitType.TROOPER || unit.unitType === UnitType.PYRO)) {
         if (unit.activateStim()) {
           stimmed++;
         }
@@ -822,13 +822,13 @@ export class PromptInput {
     }
 
     const typeMap: Record<string, UnitType> = {
-      'scv': UnitType.SCV,
-      'marine': UnitType.MARINE,
-      'firebat': UnitType.FIREBAT,
+      'scv': UnitType.ENGINEER,
+      'marine': UnitType.TROOPER,
+      'firebat': UnitType.PYRO,
       'medic': UnitType.MEDIC,
-      'vulture': UnitType.VULTURE,
-      'tank': UnitType.SIEGE_TANK,
-      'goliath': UnitType.GOLIATH,
+      'vulture': UnitType.SPEEDER,
+      'tank': UnitType.ARTILLERY,
+      'goliath': UnitType.WALKER,
     };
 
     const unitType = typeMap[arg];

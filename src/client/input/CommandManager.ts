@@ -289,7 +289,7 @@ export class CommandManager {
       const position = entity.getComponent<Position>(Position);
 
       if (!building || !owner || !position) continue;
-      if (building.buildingType !== BuildingType.COMMAND_CENTER) continue;
+      if (building.buildingType !== BuildingType.HQ) continue;
       if (owner.playerId !== this.localPlayerId) continue;
       if (building.isConstructing) continue;
 

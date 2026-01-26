@@ -221,7 +221,7 @@ export class GatherSystem extends System {
       const building = entity.getComponent<Building>(Building);
       const owner = entity.getComponent<Owner>(Owner);
       if (!building || !owner) continue;
-      if (building.buildingType !== BuildingType.COMMAND_CENTER) continue;
+      if (building.buildingType !== BuildingType.HQ) continue;
       if (building.isConstructing) continue;
       // 내 소유의 커맨드센터만
       if (owner.playerId !== playerId) continue;

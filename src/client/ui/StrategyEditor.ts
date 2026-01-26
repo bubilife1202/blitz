@@ -8,13 +8,13 @@ import { UnitType } from '@shared/types';
 
 // 유닛 이름 매핑
 const UNIT_NAMES: Record<UnitType, string> = {
-  [UnitType.SCV]: 'SCV',
-  [UnitType.MARINE]: '마린',
-  [UnitType.FIREBAT]: '파이어뱃',
+  [UnitType.ENGINEER]: 'SCV',
+  [UnitType.TROOPER]: '마린',
+  [UnitType.PYRO]: '파이어뱃',
   [UnitType.MEDIC]: '메딕',
-  [UnitType.VULTURE]: '벌처',
-  [UnitType.SIEGE_TANK]: '시즈탱크',
-  [UnitType.GOLIATH]: '골리앗',
+  [UnitType.SPEEDER]: '벌처',
+  [UnitType.ARTILLERY]: '시즈탱크',
+  [UnitType.WALKER]: '골리앗',
 };
 
 export class StrategyEditor {
@@ -147,8 +147,8 @@ export class StrategyEditor {
     
     // SCV 제외한 유닛들
     const units = [
-      UnitType.MARINE, UnitType.FIREBAT, UnitType.MEDIC,
-      UnitType.VULTURE, UnitType.SIEGE_TANK, UnitType.GOLIATH,
+      UnitType.TROOPER, UnitType.PYRO, UnitType.MEDIC,
+      UnitType.SPEEDER, UnitType.ARTILLERY, UnitType.WALKER,
     ];
     
     const colW = 175;

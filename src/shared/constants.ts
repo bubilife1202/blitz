@@ -12,6 +12,34 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   tickRate: 16,       // 초당 16틱 (약 62.5ms 간격)
 };
 
+// ==========================================
+// 시간 단위 변환 헬퍼 함수
+// ==========================================
+// buildTime, researchTime 등은 "초" 단위로 정의됨
+// 시스템에서 사용 시 틱으로 변환 필요
+
+export const TICK_RATE = DEFAULT_GAME_CONFIG.tickRate;
+
+/** 초를 틱으로 변환 */
+export function secondsToTicks(seconds: number): number {
+  return Math.round(seconds * TICK_RATE);
+}
+
+/** 틱을 초로 변환 */
+export function ticksToSeconds(ticks: number): number {
+  return ticks / TICK_RATE;
+}
+
+/** 초당 값을 틱당 값으로 변환 (예: DPS → DPT) */
+export function perSecondToPerTick(valuePerSecond: number): number {
+  return valuePerSecond / TICK_RATE;
+}
+
+/** 틱당 값을 초당 값으로 변환 */
+export function perTickToPerSecond(valuePerTick: number): number {
+  return valuePerTick * TICK_RATE;
+}
+
 // 자원 관련
 export const INITIAL_MINERALS = 50;
 export const INITIAL_GAS = 0;
@@ -41,7 +69,7 @@ export const UNIT_STATS: Record<UnitType, {
   siegeRange?: number;
   visionRange: number;
 }> = {
-  [UnitType.SCV]: {
+  [UnitType.ENGINEER]: {
     hp: 60,
     armor: 0,
     damage: 5,
@@ -55,7 +83,7 @@ export const UNIT_STATS: Record<UnitType, {
     category: UnitCategory.WORKER,
     visionRange: 7,
   },
-  [UnitType.MARINE]: {
+  [UnitType.TROOPER]: {
     hp: 40,
     armor: 0,
     damage: 6,
@@ -69,7 +97,7 @@ export const UNIT_STATS: Record<UnitType, {
     category: UnitCategory.INFANTRY,
     visionRange: 9,
   },
-  [UnitType.FIREBAT]: {
+  [UnitType.PYRO]: {
     hp: 50,
     armor: 1,
     damage: 8,
@@ -81,7 +109,7 @@ export const UNIT_STATS: Record<UnitType, {
     gasCost: 25,
     supplyCost: 1,
     category: UnitCategory.INFANTRY,
-    requires: [BuildingType.ENGINEERING_BAY],
+    requires: [BuildingType.TECH_LAB],
     splashDamage: true,
     splashRadius: 1.5,
     visionRange: 8,
@@ -98,12 +126,12 @@ export const UNIT_STATS: Record<UnitType, {
     gasCost: 25,
     supplyCost: 1,
     category: UnitCategory.INFANTRY,
-    requires: [BuildingType.ENGINEERING_BAY],
+    requires: [BuildingType.TECH_LAB],
     isHealer: true,
     healRate: 5, // HP per tick
     visionRange: 9,
   },
-  [UnitType.VULTURE]: {
+  [UnitType.SPEEDER]: {
     hp: 80,
     armor: 0,
     damage: 20,
@@ -117,7 +145,7 @@ export const UNIT_STATS: Record<UnitType, {
     category: UnitCategory.VEHICLE,
     visionRange: 8,
   },
-  [UnitType.SIEGE_TANK]: {
+  [UnitType.ARTILLERY]: {
     hp: 150,
     armor: 1,
     damage: 30,
@@ -137,7 +165,7 @@ export const UNIT_STATS: Record<UnitType, {
     splashRadius: 2,
     visionRange: 10,
   },
-  [UnitType.GOLIATH]: {
+  [UnitType.WALKER]: {
     hp: 125,
     armor: 1,
     damage: 12,
@@ -172,7 +200,7 @@ export const BUILDING_STATS: Record<BuildingType, {
   range?: number;
   attackSpeed?: number;
 }> = {
-  [BuildingType.COMMAND_CENTER]: {
+  [BuildingType.HQ]: {
     hp: 1500,
     armor: 1,
     buildTime: 100,
@@ -180,10 +208,10 @@ export const BUILDING_STATS: Record<BuildingType, {
     gasCost: 0,
     supplyProvided: 10,
     size: { width: 4, height: 3 },
-    canProduce: [UnitType.SCV],
+    canProduce: [UnitType.ENGINEER],
     visionRange: 11,
   },
-  [BuildingType.SUPPLY_DEPOT]: {
+  [BuildingType.DEPOT]: {
     hp: 500,
     armor: 1,
     buildTime: 40,
@@ -211,7 +239,7 @@ export const BUILDING_STATS: Record<BuildingType, {
     gasCost: 0,
     supplyProvided: 0,
     size: { width: 3, height: 3 },
-    canProduce: [UnitType.MARINE, UnitType.FIREBAT, UnitType.MEDIC],
+    canProduce: [UnitType.TROOPER, UnitType.PYRO, UnitType.MEDIC],
     visionRange: 9,
   },
   [BuildingType.FACTORY]: {
@@ -223,10 +251,10 @@ export const BUILDING_STATS: Record<BuildingType, {
     supplyProvided: 0,
     size: { width: 4, height: 3 },
     requires: [BuildingType.BARRACKS],
-    canProduce: [UnitType.VULTURE, UnitType.SIEGE_TANK, UnitType.GOLIATH],
+    canProduce: [UnitType.SPEEDER, UnitType.ARTILLERY, UnitType.WALKER],
     visionRange: 9,
   },
-  [BuildingType.ENGINEERING_BAY]: {
+  [BuildingType.TECH_LAB]: {
     hp: 850,
     armor: 1,
     buildTime: 60,
@@ -237,7 +265,7 @@ export const BUILDING_STATS: Record<BuildingType, {
     canResearch: [
       UpgradeType.INFANTRY_WEAPONS_1, UpgradeType.INFANTRY_WEAPONS_2, UpgradeType.INFANTRY_WEAPONS_3,
       UpgradeType.INFANTRY_ARMOR_1, UpgradeType.INFANTRY_ARMOR_2, UpgradeType.INFANTRY_ARMOR_3,
-      UpgradeType.STIM_PACK, UpgradeType.U238_SHELLS,
+      UpgradeType.STIM_PACK, UpgradeType.EXTENDED_RANGE,
     ],
     visionRange: 8,
   },
@@ -253,7 +281,7 @@ export const BUILDING_STATS: Record<BuildingType, {
     canResearch: [
       UpgradeType.VEHICLE_WEAPONS_1, UpgradeType.VEHICLE_WEAPONS_2, UpgradeType.VEHICLE_WEAPONS_3,
       UpgradeType.VEHICLE_ARMOR_1, UpgradeType.VEHICLE_ARMOR_2, UpgradeType.VEHICLE_ARMOR_3,
-      UpgradeType.SIEGE_TECH, UpgradeType.ION_THRUSTERS,
+      UpgradeType.BOMBARDMENT_MODE, UpgradeType.BOOSTERS,
     ],
     visionRange: 8,
   },
@@ -269,7 +297,7 @@ export const BUILDING_STATS: Record<BuildingType, {
     visionRange: 8,
     isDefense: true,
   },
-  [BuildingType.MISSILE_TURRET]: {
+  [BuildingType.TURRET]: {
     hp: 200,
     armor: 0,
     buildTime: 30,
@@ -277,7 +305,7 @@ export const BUILDING_STATS: Record<BuildingType, {
     gasCost: 0,
     supplyProvided: 0,
     size: { width: 2, height: 2 },
-    requires: [BuildingType.ENGINEERING_BAY],
+    requires: [BuildingType.TECH_LAB],
     visionRange: 11,
     isDefense: true,
     damage: 20,
@@ -306,14 +334,14 @@ export const UPGRADE_STATS: Record<UpgradeType, {
     mineralCost: 100,
     gasCost: 100,
     researchTime: 160,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     effect: { damageBonus: 1 },
   },
   [UpgradeType.INFANTRY_WEAPONS_2]: {
     mineralCost: 175,
     gasCost: 175,
     researchTime: 190,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     requires: [UpgradeType.INFANTRY_WEAPONS_1],
     effect: { damageBonus: 1 },
   },
@@ -321,7 +349,7 @@ export const UPGRADE_STATS: Record<UpgradeType, {
     mineralCost: 250,
     gasCost: 250,
     researchTime: 220,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     requires: [UpgradeType.INFANTRY_WEAPONS_2],
     effect: { damageBonus: 1 },
   },
@@ -330,14 +358,14 @@ export const UPGRADE_STATS: Record<UpgradeType, {
     mineralCost: 100,
     gasCost: 100,
     researchTime: 160,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     effect: { armorBonus: 1 },
   },
   [UpgradeType.INFANTRY_ARMOR_2]: {
     mineralCost: 175,
     gasCost: 175,
     researchTime: 190,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     requires: [UpgradeType.INFANTRY_ARMOR_1],
     effect: { armorBonus: 1 },
   },
@@ -345,7 +373,7 @@ export const UPGRADE_STATS: Record<UpgradeType, {
     mineralCost: 250,
     gasCost: 250,
     researchTime: 220,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     requires: [UpgradeType.INFANTRY_ARMOR_2],
     effect: { armorBonus: 1 },
   },
@@ -402,24 +430,24 @@ export const UPGRADE_STATS: Record<UpgradeType, {
     mineralCost: 100,
     gasCost: 100,
     researchTime: 120,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     effect: { special: 'stim_pack' },
   },
-  [UpgradeType.U238_SHELLS]: {
+  [UpgradeType.EXTENDED_RANGE]: {
     mineralCost: 150,
     gasCost: 150,
     researchTime: 100,
-    building: BuildingType.ENGINEERING_BAY,
+    building: BuildingType.TECH_LAB,
     effect: { rangeBonus: 1 },
   },
-  [UpgradeType.SIEGE_TECH]: {
+  [UpgradeType.BOMBARDMENT_MODE]: {
     mineralCost: 150,
     gasCost: 150,
     researchTime: 120,
     building: BuildingType.ARMORY,
     effect: { special: 'siege_mode' },
   },
-  [UpgradeType.ION_THRUSTERS]: {
+  [UpgradeType.BOOSTERS]: {
     mineralCost: 100,
     gasCost: 100,
     researchTime: 100,
@@ -436,6 +464,13 @@ export const GAS_GATHER_RATE = 4;
 
 // 전투 관련
 export const AGGRO_RANGE = 7; // 타일 단위
+
+// 이동 관련
+export const MOVEMENT_ARRIVAL_THRESHOLD_BASE = 5; // 픽셀 단위
+export const MOVEMENT_ARRIVAL_THRESHOLD_MULTIPLIER = 1.5;
+export const STIM_MOVE_SPEED_MULTIPLIER = 1.5; // 스팀팩 이동속도 보너스
+export const UNIT_SEPARATION_RADIUS = 20; // 유닛 분리 반경 (픽셀)
+export const UNIT_SEPARATION_FORCE = 0.3; // 분리 힘 강도
 
 // 테크 트리 검증 헬퍼
 export function canBuildBuilding(

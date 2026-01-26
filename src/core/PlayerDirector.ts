@@ -16,7 +16,7 @@ import { ProductionQueue } from './components/ProductionQueue';
 import { Builder, BuilderState } from './components/Builder';
 import { Resource } from './components/Resource';
 import { UnitType, BuildingType, ResourceType, type PlayerId } from '@shared/types';
-import { UNIT_STATS, BUILDING_STATS, canBuildBuilding, canTrainUnit } from '@shared/constants';
+import { UNIT_STATS, BUILDING_STATS, canBuildBuilding, canTrainUnit, secondsToTicks } from '@shared/constants';
 
 // 전략 성향 (deprecated - Strategy로 대체)
 export enum DirectorStance {
@@ -79,19 +79,19 @@ export const PRESET_STRATEGIES: Strategy[] = [
     description: '안정적인 경제와 병력 균형',
     isCustom: false,
     unitProduction: [
-      { unitType: UnitType.SCV, enabled: true, targetCount: 12, priority: 10 },
-      { unitType: UnitType.MARINE, enabled: true, targetCount: 12, priority: 5 },
-      { unitType: UnitType.VULTURE, enabled: false, targetCount: 4, priority: 3 },
-      { unitType: UnitType.SIEGE_TANK, enabled: false, targetCount: 2, priority: 4 },
-      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 2 },
+      { unitType: UnitType.ENGINEER, enabled: true, targetCount: 12, priority: 10 },
+      { unitType: UnitType.TROOPER, enabled: true, targetCount: 12, priority: 5 },
+      { unitType: UnitType.SPEEDER, enabled: false, targetCount: 4, priority: 3 },
+      { unitType: UnitType.ARTILLERY, enabled: false, targetCount: 2, priority: 4 },
+      { unitType: UnitType.PYRO, enabled: false, targetCount: 0, priority: 2 },
       { unitType: UnitType.MEDIC, enabled: false, targetCount: 2, priority: 3 },
-      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 2 },
+      { unitType: UnitType.WALKER, enabled: false, targetCount: 0, priority: 2 },
     ],
     buildOrder: [
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 9 },
       { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
       { buildingType: BuildingType.REFINERY, triggerType: 'supply', triggerValue: 12 },
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 15 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 15 },
     ],
     workerTarget: 12,
     attackThreshold: 6,
@@ -107,19 +107,19 @@ export const PRESET_STRATEGIES: Strategy[] = [
     description: '빠른 배럭 2개로 마린 물량 공격',
     isCustom: false,
     unitProduction: [
-      { unitType: UnitType.SCV, enabled: true, targetCount: 10, priority: 8 },
-      { unitType: UnitType.MARINE, enabled: true, targetCount: 20, priority: 10 },
-      { unitType: UnitType.VULTURE, enabled: false, targetCount: 0, priority: 1 },
-      { unitType: UnitType.SIEGE_TANK, enabled: false, targetCount: 0, priority: 1 },
-      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.ENGINEER, enabled: true, targetCount: 10, priority: 8 },
+      { unitType: UnitType.TROOPER, enabled: true, targetCount: 20, priority: 10 },
+      { unitType: UnitType.SPEEDER, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.ARTILLERY, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.PYRO, enabled: false, targetCount: 0, priority: 1 },
       { unitType: UnitType.MEDIC, enabled: false, targetCount: 0, priority: 1 },
-      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.WALKER, enabled: false, targetCount: 0, priority: 1 },
     ],
     buildOrder: [
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 9 },
       { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
       { buildingType: BuildingType.BARRACKS, triggerType: 'minerals', triggerValue: 150 },
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 14 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 14 },
     ],
     workerTarget: 10,
     attackThreshold: 4,
@@ -135,20 +135,20 @@ export const PRESET_STRATEGIES: Strategy[] = [
     description: '빠르게 가스 → 팩토리 → 탱크/벌처',
     isCustom: false,
     unitProduction: [
-      { unitType: UnitType.SCV, enabled: true, targetCount: 14, priority: 10 },
-      { unitType: UnitType.MARINE, enabled: true, targetCount: 4, priority: 3 },
-      { unitType: UnitType.VULTURE, enabled: true, targetCount: 6, priority: 7 },
-      { unitType: UnitType.SIEGE_TANK, enabled: true, targetCount: 4, priority: 8 },
-      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.ENGINEER, enabled: true, targetCount: 14, priority: 10 },
+      { unitType: UnitType.TROOPER, enabled: true, targetCount: 4, priority: 3 },
+      { unitType: UnitType.SPEEDER, enabled: true, targetCount: 6, priority: 7 },
+      { unitType: UnitType.ARTILLERY, enabled: true, targetCount: 4, priority: 8 },
+      { unitType: UnitType.PYRO, enabled: false, targetCount: 0, priority: 1 },
       { unitType: UnitType.MEDIC, enabled: false, targetCount: 0, priority: 1 },
-      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.WALKER, enabled: false, targetCount: 0, priority: 1 },
     ],
     buildOrder: [
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 9 },
       { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
       { buildingType: BuildingType.REFINERY, triggerType: 'supply', triggerValue: 11 },
       { buildingType: BuildingType.FACTORY, triggerType: 'minerals', triggerValue: 200 },
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 16 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 16 },
     ],
     workerTarget: 14,
     attackThreshold: 8,
@@ -164,20 +164,20 @@ export const PRESET_STRATEGIES: Strategy[] = [
     description: '경제 우선, 방어적 플레이 후 확장',
     isCustom: false,
     unitProduction: [
-      { unitType: UnitType.SCV, enabled: true, targetCount: 20, priority: 10 },
-      { unitType: UnitType.MARINE, enabled: true, targetCount: 8, priority: 5 },
-      { unitType: UnitType.VULTURE, enabled: false, targetCount: 0, priority: 1 },
-      { unitType: UnitType.SIEGE_TANK, enabled: true, targetCount: 2, priority: 6 },
-      { unitType: UnitType.FIREBAT, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.ENGINEER, enabled: true, targetCount: 20, priority: 10 },
+      { unitType: UnitType.TROOPER, enabled: true, targetCount: 8, priority: 5 },
+      { unitType: UnitType.SPEEDER, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.ARTILLERY, enabled: true, targetCount: 2, priority: 6 },
+      { unitType: UnitType.PYRO, enabled: false, targetCount: 0, priority: 1 },
       { unitType: UnitType.MEDIC, enabled: true, targetCount: 2, priority: 4 },
-      { unitType: UnitType.GOLIATH, enabled: false, targetCount: 0, priority: 1 },
+      { unitType: UnitType.WALKER, enabled: false, targetCount: 0, priority: 1 },
     ],
     buildOrder: [
-      { buildingType: BuildingType.SUPPLY_DEPOT, triggerType: 'supply', triggerValue: 9 },
+      { buildingType: BuildingType.DEPOT, triggerType: 'supply', triggerValue: 9 },
       { buildingType: BuildingType.BARRACKS, triggerType: 'supply', triggerValue: 10 },
       { buildingType: BuildingType.REFINERY, triggerType: 'supply', triggerValue: 12 },
       { buildingType: BuildingType.BUNKER, triggerType: 'minerals', triggerValue: 100 },
-      { buildingType: BuildingType.COMMAND_CENTER, triggerType: 'minerals', triggerValue: 400 },
+      { buildingType: BuildingType.HQ, triggerType: 'minerals', triggerValue: 400 },
       { buildingType: BuildingType.FACTORY, triggerType: 'minerals', triggerValue: 200 },
     ],
     workerTarget: 20,
@@ -513,7 +513,7 @@ export class PlayerDirector {
     
     const myBuildings = this.getMyBuildings();
     const myUnits = this.getMyUnits();
-    const workers = myUnits.filter(u => u.getComponent<Unit>(Unit)?.unitType === UnitType.SCV);
+    const workers = myUnits.filter(u => u.getComponent<Unit>(Unit)?.unitType === UnitType.ENGINEER);
     const combatUnits = this.getCombatUnits();
     const strategy = this.currentStrategy;
     
@@ -564,7 +564,7 @@ export class PlayerDirector {
     
     // 유닛 생산 목표 표시
     for (const config of strategy.unitProduction) {
-      if (!config.enabled || config.unitType === UnitType.SCV) continue;
+      if (!config.enabled || config.unitType === UnitType.ENGINEER) continue;
       const count = myUnits.filter(u => u.getComponent<Unit>(Unit)?.unitType === config.unitType).length;
       if (config.targetCount > 0 && count < config.targetCount) {
         this.nextActions.push({
@@ -664,15 +664,15 @@ export class PlayerDirector {
   // 건물이 해당 유닛을 생산할 수 있는지 체크
   private canBuildingProduceUnit(buildingType: BuildingType, unitType: UnitType): boolean {
     const production: Record<BuildingType, UnitType[]> = {
-      [BuildingType.COMMAND_CENTER]: [UnitType.SCV],
-      [BuildingType.BARRACKS]: [UnitType.MARINE, UnitType.FIREBAT, UnitType.MEDIC],
-      [BuildingType.FACTORY]: [UnitType.VULTURE, UnitType.SIEGE_TANK, UnitType.GOLIATH],
-      [BuildingType.SUPPLY_DEPOT]: [],
+      [BuildingType.HQ]: [UnitType.ENGINEER],
+      [BuildingType.BARRACKS]: [UnitType.TROOPER, UnitType.PYRO, UnitType.MEDIC],
+      [BuildingType.FACTORY]: [UnitType.SPEEDER, UnitType.ARTILLERY, UnitType.WALKER],
+      [BuildingType.DEPOT]: [],
       [BuildingType.REFINERY]: [],
-      [BuildingType.ENGINEERING_BAY]: [],
+      [BuildingType.TECH_LAB]: [],
       [BuildingType.ARMORY]: [],
       [BuildingType.BUNKER]: [],
-      [BuildingType.MISSILE_TURRET]: [],
+      [BuildingType.TURRET]: [],
     };
     return production[buildingType]?.includes(unitType) || false;
   }
@@ -680,13 +680,13 @@ export class PlayerDirector {
   // 유닛 이름 (한글)
   private getUnitName(unitType: UnitType): string {
     const names: Record<UnitType, string> = {
-      [UnitType.SCV]: 'SCV',
-      [UnitType.MARINE]: '마린',
-      [UnitType.FIREBAT]: '파이어뱃',
+      [UnitType.ENGINEER]: 'SCV',
+      [UnitType.TROOPER]: '마린',
+      [UnitType.PYRO]: '파이어뱃',
       [UnitType.MEDIC]: '메딕',
-      [UnitType.VULTURE]: '벌처',
-      [UnitType.SIEGE_TANK]: '시즈탱크',
-      [UnitType.GOLIATH]: '골리앗',
+      [UnitType.SPEEDER]: '벌처',
+      [UnitType.ARTILLERY]: '시즈탱크',
+      [UnitType.WALKER]: '골리앗',
     };
     return names[unitType] || unitType;
   }
@@ -694,33 +694,32 @@ export class PlayerDirector {
   // 서플라이 막힘 체크 및 건설
   private checkSupplyBlock(resources: { minerals: number; gas: number; supply: number; supplyMax: number }): void {
     if (resources.supply < resources.supplyMax - 2) return;
-    if (resources.minerals < BUILDING_STATS[BuildingType.SUPPLY_DEPOT].mineralCost) return;
+    if (resources.minerals < BUILDING_STATS[BuildingType.DEPOT].mineralCost) return;
     
     // 이미 건설 중인 서플라이 디포 있는지 체크
     const constructingDepot = this.getMyBuildings().find(b => {
       const building = b.getComponent<Building>(Building);
-      return building?.buildingType === BuildingType.SUPPLY_DEPOT && building.isConstructing;
+      return building?.buildingType === BuildingType.DEPOT && building.isConstructing;
     });
     if (constructingDepot) return;
     
-    // 건설 중인 SCV 있는지 체크
-    const buildingSCV = this.getMyUnits().find(u => {
+    const buildingCount = this.getMyUnits().filter(u => {
       const builder = u.getComponent<Builder>(Builder);
       return builder && builder.state !== BuilderState.IDLE;
-    });
-    if (buildingSCV) return;
+    }).length;
+    if (buildingCount >= 2) return;
     
     // Idle SCV로 보급고 건설
     const idleWorkers = this.getIdleWorkers();
     if (idleWorkers.length === 0) return;
     
     const worker = idleWorkers[0];
-    const buildPos = this.findBuildLocation(BuildingType.SUPPLY_DEPOT);
+    const buildPos = this.findBuildLocation(BuildingType.DEPOT);
     if (!buildPos) return;
     
     // 자원 차감
     this.gameState.modifyPlayerResources(this.playerId, {
-      minerals: -BUILDING_STATS[BuildingType.SUPPLY_DEPOT].mineralCost,
+      minerals: -BUILDING_STATS[BuildingType.DEPOT].mineralCost,
     });
     
     // Builder 컴포넌트로 건설 명령
@@ -729,7 +728,7 @@ export class PlayerDirector {
     const movement = worker.getComponent<Movement>(Movement);
     
     if (builder && movement) {
-      builder.startBuildCommand(BuildingType.SUPPLY_DEPOT, buildPos.x, buildPos.y);
+      builder.startBuildCommand(BuildingType.DEPOT, buildPos.x, buildPos.y);
       movement.setTarget(buildPos.x, buildPos.y);
       if (gatherer) gatherer.stop();
       this.addLog('보급고 건설 시작', 'action');
@@ -841,7 +840,7 @@ export class PlayerDirector {
     
     // 미네랄이 400 이상이고 커맨드센터가 1개일 때
     const commandCenters = this.getMyBuildings().filter(b => 
-      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ
     );
     
     if (resources.minerals >= 400 && commandCenters.length === 1) {
@@ -1040,7 +1039,7 @@ export class PlayerDirector {
   private getEnemyWorkers(): Entity[] {
     return this.getEnemyEntities().filter(e => {
       const unit = e.getComponent<Unit>(Unit);
-      return unit?.unitType === UnitType.SCV;
+      return unit?.unitType === UnitType.ENGINEER;
     });
   }
 
@@ -1097,7 +1096,7 @@ export class PlayerDirector {
 
   private getNearbyEnemyCount(radius: number): number {
     const myBuildings = this.getMyBuildings();
-    const myCC = myBuildings.find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const myCC = myBuildings.find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ);
     const basePos = myCC?.getComponent<Position>(Position);
     if (!basePos) return 0;
 
@@ -1110,14 +1109,14 @@ export class PlayerDirector {
 
   private getThreatScore(): number {
     const myBuildings = this.getMyBuildings();
-    const myCC = myBuildings.find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const myCC = myBuildings.find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ);
     const basePos = myCC?.getComponent<Position>(Position);
     if (!basePos) return 0;
 
     const radius = 420;
     const enemies = this.getEnemyEntities().filter(e => {
       const unit = e.getComponent<Unit>(Unit);
-      return !!unit && unit.unitType !== UnitType.SCV;
+      return !!unit && unit.unitType !== UnitType.ENGINEER;
     });
 
     let threat = 0;
@@ -1141,7 +1140,7 @@ export class PlayerDirector {
     
     // 내 커맨드센터 위치
     const myCC = this.getMyBuildings().find(b => 
-      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ
     );
     if (!myCC) return;
     
@@ -1186,7 +1185,7 @@ export class PlayerDirector {
     }
     
     const resources = this.gameState.getPlayerResources(this.playerId);
-    if (!resources || resources.minerals < BUILDING_STATS[BuildingType.COMMAND_CENTER].mineralCost) {
+    if (!resources || resources.minerals < BUILDING_STATS[BuildingType.HQ].mineralCost) {
       this.addLog('자원 부족', 'warning');
       return;
     }
@@ -1199,7 +1198,7 @@ export class PlayerDirector {
     
     const worker = idleWorkers[0];
     this.gameState.modifyPlayerResources(this.playerId, {
-      minerals: -BUILDING_STATS[BuildingType.COMMAND_CENTER].mineralCost,
+      minerals: -BUILDING_STATS[BuildingType.HQ].mineralCost,
     });
     
     const builder = worker.getComponent<Builder>(Builder);
@@ -1207,7 +1206,7 @@ export class PlayerDirector {
     const movement = worker.getComponent<Movement>(Movement);
     
     if (builder && movement) {
-      builder.startBuildCommand(BuildingType.COMMAND_CENTER, buildPos.x, buildPos.y);
+      builder.startBuildCommand(BuildingType.HQ, buildPos.x, buildPos.y);
       movement.setTarget(buildPos.x, buildPos.y);
       if (gatherer) gatherer.stop();
     }
@@ -1303,7 +1302,7 @@ export class PlayerDirector {
   private getDefenseBuildCandidate(resources: { minerals: number; gas: number }): BuildingType | null {
     const buildingTypes = this.getMyBuildings().map(b => b.getComponent<Building>(Building)!.buildingType);
     const bunker = BuildingType.BUNKER;
-    const turret = BuildingType.MISSILE_TURRET;
+    const turret = BuildingType.TURRET;
 
     if (canBuildBuilding(bunker, buildingTypes) && resources.minerals >= BUILDING_STATS[bunker].mineralCost) {
       return bunker;
@@ -1326,7 +1325,7 @@ export class PlayerDirector {
     const centerX = Math.floor(mapWidth / 2);
     const centerY = Math.floor(mapHeight / 2);
     
-    const stats = BUILDING_STATS[BuildingType.COMMAND_CENTER];
+    const stats = BUILDING_STATS[BuildingType.HQ];
     
     for (let radius = 5; radius < 20; radius++) {
       for (let angle = 0; angle < 8; angle++) {
@@ -1350,7 +1349,7 @@ export class PlayerDirector {
 
   // 계획 스냅샷 (UI용)
   getPlanSnapshot(): PlanSnapshot {
-    const workers = this.getMyUnits().filter(u => u.getComponent<Unit>(Unit)?.unitType === UnitType.SCV).length;
+    const workers = this.getMyUnits().filter(u => u.getComponent<Unit>(Unit)?.unitType === UnitType.ENGINEER).length;
     const army = this.getCombatUnits().length;
     const buildings = this.getMyBuildings().length;
     
@@ -1391,7 +1390,7 @@ export class PlayerDirector {
 
   private trainUnit(queue: ProductionQueue, unitType: UnitType): void {
     const stats = UNIT_STATS[unitType];
-    queue.addToQueue(unitType, stats.buildTime);
+    queue.addToQueue(unitType, secondsToTicks(stats.buildTime));
     this.gameState.modifyPlayerResources(this.playerId, {
       minerals: -stats.mineralCost,
       gas: -stats.gasCost,
@@ -1405,7 +1404,7 @@ export class PlayerDirector {
       const builder = u.getComponent<Builder>(Builder);
       const movement = u.getComponent<Movement>(Movement);
       
-      if (unit?.unitType !== UnitType.SCV) return false;
+      if (unit?.unitType !== UnitType.ENGINEER) return false;
       if (gatherer?.state !== GathererState.IDLE) return false;
       if (builder?.state !== BuilderState.IDLE) return false;
       if (movement?.isMoving) return false;
@@ -1417,7 +1416,7 @@ export class PlayerDirector {
   private getCombatUnits(): Entity[] {
     return this.getMyUnits().filter(u => {
       const unit = u.getComponent<Unit>(Unit);
-      return unit && unit.unitType !== UnitType.SCV;
+      return unit && unit.unitType !== UnitType.ENGINEER;
     });
   }
 
@@ -1474,7 +1473,7 @@ export class PlayerDirector {
       const position = building.getComponent<Position>(Position);
       
       if (!buildingComp || !position) continue;
-      if (buildingComp.buildingType !== BuildingType.COMMAND_CENTER) continue;
+      if (buildingComp.buildingType !== BuildingType.HQ) continue;
       if (buildingComp.isConstructing) continue;
       
       const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
@@ -1492,7 +1491,7 @@ export class PlayerDirector {
     const tileSize = this.gameState.config.tileSize;
     
     const commandCenter = this.getMyBuildings().find(b => 
-      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ
     );
     
     if (!commandCenter) return null;
@@ -1573,7 +1572,7 @@ export class PlayerDirector {
     
     const productionBuildings = buildings.filter(b => {
       const building = b.getComponent<Building>(Building);
-      return building && [BuildingType.BARRACKS, BuildingType.FACTORY, BuildingType.COMMAND_CENTER].includes(building.buildingType);
+      return building && [BuildingType.BARRACKS, BuildingType.FACTORY, BuildingType.HQ].includes(building.buildingType);
     });
     
     if (productionBuildings.length > 0) {

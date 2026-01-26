@@ -80,7 +80,7 @@ export class ResearchSystem extends System {
       }
       
       // U-238 Shells (Marine range)
-      if (upgradeType === 'u238_shells' && unit.unitType === 'marine') {
+      if (upgradeType === 'extended_range' && unit.unitType === 'trooper') {
         unit.range += stats.effect.rangeBonus || 0;
         unit.baseRange += stats.effect.rangeBonus || 0;
       }

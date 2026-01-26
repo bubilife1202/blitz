@@ -4,7 +4,7 @@
 
 import { Component } from '../ecs/Component';
 import { UnitType } from '@shared/types';
-import { UNIT_STATS } from '@shared/constants';
+import { UNIT_STATS, secondsToTicks } from '@shared/constants';
 
 export interface UnitData {
   unitType: UnitType;
@@ -82,7 +82,7 @@ export class Unit extends Component {
     if (this.hp <= 10) return false; // Not enough HP
     
     this.isStimmed = true;
-    this.stimTimer = 160; // ~10 seconds at 16 ticks/sec
+    this.stimTimer = secondsToTicks(10);
     this.hp -= 10; // Costs 10 HP
     this.attackSpeed = this.baseAttackSpeed * 0.5; // 50% faster
     return true;

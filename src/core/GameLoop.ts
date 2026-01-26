@@ -1,10 +1,9 @@
 // ==========================================
 // GameLoop - 틱 기반 게임 루프
 // ==========================================
-// 고정 틱레이트로 게임 로직 업데이트
-// 렌더링과 분리된 순수 로직 루프
 
 import type { GameState } from './GameState';
+import type { CommandExecutor } from './commands/CommandExecutor';
 
 export interface GameLoopCallbacks {
   onTick?: (tick: number) => void;
@@ -17,15 +16,18 @@ export class GameLoop {
   private lastTime: number = 0;
   private accumulator: number = 0;
   private callbacks: GameLoopCallbacks;
+  private commandExecutor: CommandExecutor | null = null;
   
-  // 틱 간격 (밀리초)
   private readonly tickInterval: number;
 
   constructor(gameState: GameState, callbacks: GameLoopCallbacks = {}) {
     this.gameState = gameState;
     this.callbacks = callbacks;
-    // tickRate가 16이면 1000/16 = 62.5ms 간격
     this.tickInterval = 1000 / gameState.config.tickRate;
+  }
+
+  setCommandExecutor(executor: CommandExecutor): void {
+    this.commandExecutor = executor;
   }
 
   // 게임 루프 시작
@@ -100,13 +102,13 @@ export class GameLoop {
     this.callbacks.onTick?.(currentTick);
   }
 
-  // 명령 처리
   private processCommands(tick: number): void {
     const commands = this.gameState.getCommandsForTick(tick);
     
-    for (const _command of commands) {
-      // TODO: 명령 핸들러로 위임
-      // CommandHandler.execute(_command, this.gameState);
+    if (this.commandExecutor) {
+      for (const command of commands) {
+        this.commandExecutor.execute(command);
+      }
     }
 
     this.gameState.clearCommandsForTick(tick);

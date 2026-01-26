@@ -38,7 +38,7 @@ import { Building } from '@core/components/Building';
 import { ProductionQueue } from '@core/components/ProductionQueue';
 import { Unit } from '@core/components/Unit';
 import { Race, BuildingType, UnitType, UpgradeType, AIDifficulty, type PlayerId } from '@shared/types';
-import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS, canTrainUnit } from '@shared/constants';
+import { UNIT_STATS, UPGRADE_STATS, BUILDING_STATS, canTrainUnit, secondsToTicks } from '@shared/constants';
 import { ResearchQueue } from '@core/components/ResearchQueue';
 import { combatEvents } from '@core/events/CombatEvents';
 import { soundManager } from '../audio/SoundManager';
@@ -123,6 +123,7 @@ export class GameScene extends Phaser.Scene {
   private isMultiplayer: boolean = false;
   private network?: NetworkClient;
   private commandExecutor?: CommandExecutor;
+  private networkCommandHandler?: (command: GameCommand) => void;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -164,15 +165,15 @@ export class GameScene extends Phaser.Scene {
     this.localHost.setAICount(this.aiCount);
     
     // 플레이어 추가
-    this.gameState.addPlayer(1, Race.TERRAN);
+    this.gameState.addPlayer(1, Race.VANGUARD);
     if (this.aiCount > 0) {
       // 싱글플레이: AI 추가
       for (let i = 0; i < this.aiCount; i++) {
-        this.gameState.addPlayer(2 + i, Race.TERRAN);
+        this.gameState.addPlayer(2 + i, Race.VANGUARD);
       }
     } else {
       // 멀티플레이: 상대 플레이어 추가
-      this.gameState.addPlayer(2, Race.TERRAN);
+      this.gameState.addPlayer(2, Race.VANGUARD);
     }
     console.timeEnd('1️⃣ Core init (GameState, Pathfinding, LocalHost)');
     
@@ -250,12 +251,13 @@ export class GameScene extends Phaser.Scene {
       };
       
       // 원격 명령 수신 → 실행
-      this.network.on(NetworkEvent.COMMAND, (command: GameCommand) => {
+      this.networkCommandHandler = (command: GameCommand) => {
         // 자기 명령은 이미 로컬에서 실행됨, 상대 명령만 실행
         if (command.playerId !== this.localPlayerId) {
           this.commandExecutor?.execute(command);
         }
-      });
+      };
+      this.network.on(NetworkEvent.COMMAND, this.networkCommandHandler);
     }
     
     // 건물 배치 매니저 초기화
@@ -618,15 +620,15 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.keyboard?.on('keydown-D', () => {
       if (this.promptInput?.isOpen()) return;
-      this.buildingPlacer.startPlacement(BuildingType.SUPPLY_DEPOT);
+      this.buildingPlacer.startPlacement(BuildingType.DEPOT);
     });
     this.input.keyboard?.on('keydown-C', () => {
       if (this.promptInput?.isOpen()) return;
-      this.buildingPlacer.startPlacement(BuildingType.COMMAND_CENTER);
+      this.buildingPlacer.startPlacement(BuildingType.HQ);
     });
     this.input.keyboard?.on('keydown-E', () => {
       if (this.promptInput?.isOpen()) return;
-      this.buildingPlacer.startPlacement(BuildingType.ENGINEERING_BAY);
+      this.buildingPlacer.startPlacement(BuildingType.TECH_LAB);
     });
     this.input.keyboard?.on('keydown-F', () => {
       if (this.promptInput?.isOpen()) return;
@@ -653,19 +655,19 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-S', () => {
       if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
-        this.trainUnit(UnitType.SCV);
+        this.trainUnit(UnitType.ENGINEER);
       }
     });
     this.input.keyboard?.on('keydown-M', () => {
       if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
-        this.trainUnit(UnitType.MARINE);
+        this.trainUnit(UnitType.TROOPER);
       }
     });
     this.input.keyboard?.on('keydown-I', () => {
       if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
-        this.trainUnit(UnitType.FIREBAT);
+        this.trainUnit(UnitType.PYRO);
       }
     });
     this.input.keyboard?.on('keydown-H', () => {
@@ -677,19 +679,19 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-V', () => {
       if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
-        this.trainUnit(UnitType.VULTURE);
+        this.trainUnit(UnitType.SPEEDER);
       }
     });
     this.input.keyboard?.on('keydown-G', () => {
       if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
-        this.trainUnit(UnitType.GOLIATH);
+        this.trainUnit(UnitType.WALKER);
       }
     });
     this.input.keyboard?.on('keydown-K', () => {
       if (this.promptInput?.isOpen()) return;
       if (this.hasProductionBuildingSelected()) {
-        this.trainUnit(UnitType.SIEGE_TANK);
+        this.trainUnit(UnitType.ARTILLERY);
       }
     });
 
@@ -885,7 +887,7 @@ export class GameScene extends Phaser.Scene {
       minerals: -stats.mineralCost,
       gas: -stats.gasCost,
     });
-    queue.addToQueue(unitType, stats.buildTime);
+    queue.addToQueue(unitType, secondsToTicks(stats.buildTime));
 
     console.log(`Training ${unitType}`);
   }
@@ -940,7 +942,7 @@ export class GameScene extends Phaser.Scene {
       minerals: -stats.mineralCost,
       gas: -stats.gasCost,
     });
-    researchQueue.startResearch(upgradeType, stats.researchTime);
+    researchQueue.startResearch(upgradeType, secondsToTicks(stats.researchTime));
 
     console.log(`Researching ${upgradeType}`);
   }
@@ -951,7 +953,7 @@ export class GameScene extends Phaser.Scene {
     
     for (const entity of selected) {
       const unit = entity.getComponent<Unit>(Unit);
-      if (unit?.unitType === UnitType.SIEGE_TANK) {
+      if (unit?.unitType === UnitType.ARTILLERY) {
         const wasSieged = unit.isSieged;
         unit.toggleSiege();
         soundManager.play(wasSieged ? 'siege_off' : 'siege_on');
@@ -966,7 +968,7 @@ export class GameScene extends Phaser.Scene {
     
     for (const entity of selected) {
       const unit = entity.getComponent<Unit>(Unit);
-      if (unit && (unit.unitType === UnitType.MARINE || unit.unitType === UnitType.FIREBAT)) {
+      if (unit && (unit.unitType === UnitType.TROOPER || unit.unitType === UnitType.PYRO)) {
         if (unit.activateStim()) {
           soundManager.play('stim');
           console.log(`${unit.unitType} stimmed!`);
@@ -981,6 +983,11 @@ export class GameScene extends Phaser.Scene {
     
     // 이벤트 리스너 정리 (중복 등록 방지)
     combatEvents.clear();
+    
+    // 네트워크 이벤트 리스너 정리
+    if (this.network && this.networkCommandHandler) {
+      this.network.off(NetworkEvent.COMMAND, this.networkCommandHandler);
+    }
     
     this.unitRenderer.destroy();
     this.buildingRenderer.destroy();

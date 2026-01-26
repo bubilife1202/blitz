@@ -285,12 +285,12 @@ export class HUD {
         }
         
         // Siege Tank 시즈 버튼
-        if (unit.unitType === UnitType.SIEGE_TANK) {
+        if (unit.unitType === UnitType.ARTILLERY) {
           this.showSiegeButton(unit.isSieged);
         }
         
         // Marine/Firebat Stim 버튼
-        if (unit.unitType === UnitType.MARINE || unit.unitType === UnitType.FIREBAT) {
+        if (unit.unitType === UnitType.TROOPER || unit.unitType === UnitType.PYRO) {
           this.showStimButton();
         }
       } else if (building) {
@@ -473,10 +473,10 @@ export class HUD {
     const playerBuildings = this.getPlayerBuildingTypes();
 
     const buildOptions = [
-      { type: BuildingType.SUPPLY_DEPOT, key: 'D', label: 'Supply' },
+      { type: BuildingType.DEPOT, key: 'D', label: 'Supply' },
       { type: BuildingType.BARRACKS, key: 'B', label: 'Barracks' },
       { type: BuildingType.REFINERY, key: 'G', label: 'Refinery' },
-      { type: BuildingType.ENGINEERING_BAY, key: 'E', label: 'Eng Bay' },
+      { type: BuildingType.TECH_LAB, key: 'E', label: 'Eng Bay' },
       { type: BuildingType.FACTORY, key: 'F', label: 'Factory' },
       { type: BuildingType.ARMORY, key: 'R', label: 'Armory' },
     ];
@@ -495,13 +495,13 @@ export class HUD {
     if (!buildingStats.canProduce || buildingStats.canProduce.length === 0) return;
 
     const unitConfig: Record<UnitType, { label: string; key: string }> = {
-      [UnitType.SCV]: { label: 'SCV', key: 'S' },
-      [UnitType.MARINE]: { label: 'Marine', key: 'M' },
-      [UnitType.FIREBAT]: { label: 'Firebat', key: 'I' },
+      [UnitType.ENGINEER]: { label: 'SCV', key: 'S' },
+      [UnitType.TROOPER]: { label: 'Marine', key: 'M' },
+      [UnitType.PYRO]: { label: 'Firebat', key: 'I' },
       [UnitType.MEDIC]: { label: 'Medic', key: 'H' },
-      [UnitType.VULTURE]: { label: 'Vulture', key: 'V' },
-      [UnitType.SIEGE_TANK]: { label: 'Tank', key: 'K' },
-      [UnitType.GOLIATH]: { label: 'Goliath', key: 'G' },
+      [UnitType.SPEEDER]: { label: 'Vulture', key: 'V' },
+      [UnitType.ARTILLERY]: { label: 'Tank', key: 'K' },
+      [UnitType.WALKER]: { label: 'Goliath', key: 'G' },
     };
 
     const trainOptions = buildingStats.canProduce.map(unitType => ({
@@ -533,15 +533,15 @@ export class HUD {
       [UpgradeType.INFANTRY_ARMOR_2]: { label: 'Inf Arm 2', key: '5' },
       [UpgradeType.INFANTRY_ARMOR_3]: { label: 'Inf Arm 3', key: '6' },
       [UpgradeType.STIM_PACK]: { label: 'Stim', key: 'T' },
-      [UpgradeType.U238_SHELLS]: { label: 'U238', key: 'U' },
+      [UpgradeType.EXTENDED_RANGE]: { label: 'U238', key: 'U' },
       [UpgradeType.VEHICLE_WEAPONS_1]: { label: 'Veh Wpn 1', key: '1' },
       [UpgradeType.VEHICLE_WEAPONS_2]: { label: 'Veh Wpn 2', key: '2' },
       [UpgradeType.VEHICLE_WEAPONS_3]: { label: 'Veh Wpn 3', key: '3' },
       [UpgradeType.VEHICLE_ARMOR_1]: { label: 'Veh Arm 1', key: '4' },
       [UpgradeType.VEHICLE_ARMOR_2]: { label: 'Veh Arm 2', key: '5' },
       [UpgradeType.VEHICLE_ARMOR_3]: { label: 'Veh Arm 3', key: '6' },
-      [UpgradeType.SIEGE_TECH]: { label: 'Siege', key: 'S' },
-      [UpgradeType.ION_THRUSTERS]: { label: 'Thrusters', key: 'I' },
+      [UpgradeType.BOMBARDMENT_MODE]: { label: 'Siege', key: 'S' },
+      [UpgradeType.BOOSTERS]: { label: 'Thrusters', key: 'I' },
     };
 
     this.createResearchButtonGrid(

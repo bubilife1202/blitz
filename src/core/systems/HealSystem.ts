@@ -27,14 +27,6 @@ export class HealSystem extends System {
     for (const medic of medics) {
       this.processMedic(medic, entities, gameState);
     }
-    
-    // Stim 타이머 업데이트 (모든 유닛)
-    for (const entity of entities) {
-      const unit = entity.getComponent<Unit>(Unit);
-      if (unit?.isStimmed) {
-        unit.updateStim();
-      }
-    }
   }
 
   private processMedic(medic: Entity, allEntities: Entity[], _gameState: GameState): void {

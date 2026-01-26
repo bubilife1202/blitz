@@ -82,7 +82,7 @@ export class CombatSystem extends System {
 
       if (combat.canAttack()) {
         this.attack(entity, unit, target, position, targetPos, gameState);
-        combat.startCooldown(Math.floor(16 / unit.attackSpeed)); // 틱 기반 쿨다운
+        combat.startCooldown(Math.floor(TICK_RATE / unit.attackSpeed));
       }
     } else if (!combat.isHoldPosition) {
       // 추격
@@ -103,9 +103,9 @@ export class CombatSystem extends System {
 
     // 프로젝타일 타입 결정
     let projectileType: ProjectileType = 'bullet';
-    if (attacker.unitType === UnitType.FIREBAT) {
+    if (attacker.unitType === UnitType.PYRO) {
       projectileType = 'flame';
-    } else if (attacker.unitType === UnitType.SIEGE_TANK || attacker.unitType === UnitType.GOLIATH) {
+    } else if (attacker.unitType === UnitType.ARTILLERY || attacker.unitType === UnitType.WALKER) {
       projectileType = 'missile';
     }
 
@@ -193,9 +193,9 @@ export class CombatSystem extends System {
 
       if (targetUnit.isDead()) {
         // 죽음 이벤트 발송 (유닛 크기는 카테고리 기반)
-        const size = targetUnit.unitType === UnitType.SIEGE_TANK ? 16 
-          : targetUnit.unitType === UnitType.GOLIATH ? 14 
-          : targetUnit.unitType === UnitType.VULTURE ? 14 
+        const size = targetUnit.unitType === UnitType.ARTILLERY ? 16 
+          : targetUnit.unitType === UnitType.WALKER ? 14 
+          : targetUnit.unitType === UnitType.SPEEDER ? 14 
           : 10;
         combatEvents.emitDeath({
           x: targetPos.x,
@@ -341,6 +341,6 @@ export class CombatSystem extends System {
 }
 
 // Import for building stats and events
-import { BUILDING_STATS, UNIT_STATS } from '@shared/constants';
+import { BUILDING_STATS, UNIT_STATS, TICK_RATE } from '@shared/constants';
 import { combatEvents, type ProjectileType } from '../events/CombatEvents';
 import { UnitType } from '@shared/types';

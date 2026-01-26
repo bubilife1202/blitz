@@ -15,8 +15,8 @@ import { Movement } from '../components/Movement';
 import { Combat } from '../components/Combat';
 import { Gatherer } from '../components/Gatherer';
 import { Builder } from '../components/Builder';
-import { UnitType, UnitCategory } from '@shared/types';
-import { UNIT_STATS } from '@shared/constants';
+import { UnitType, UnitCategory, UpgradeType } from '@shared/types';
+import { UNIT_STATS, UPGRADE_STATS } from '@shared/constants';
 
 export class ProductionSystem extends System {
   readonly requiredComponents = [Building.type, ProductionQueue.type, Position.type, Owner.type];
@@ -84,13 +84,18 @@ export class ProductionSystem extends System {
       .addComponent(new Unit(unitType))
       .addComponent(new Movement(stats.moveSpeed * 32));
     
+    const player = gameState.getPlayer(playerId);
+    if (player) {
+      this.applyUpgrades(unit, stats.category, player.upgrades);
+    }
+    
     // 전투 가능 유닛에만 Combat 컴포넌트 추가 (Medic 제외)
     if (!stats.isHealer && stats.damage > 0) {
       unit.addComponent(new Combat());
     }
 
     // SCV는 채취 가능 + 건설 가능
-    if (unitType === UnitType.SCV) {
+    if (unitType === UnitType.ENGINEER) {
       unit.addComponent(new Gatherer(8));
       unit.addComponent(new Builder());
     }
@@ -105,5 +110,36 @@ export class ProductionSystem extends System {
     }
 
     console.log(`Spawned ${unitType} for player ${playerId}`);
+  }
+
+  private applyUpgrades(entity: Entity, category: UnitCategory, upgrades: UpgradeType[]): void {
+    const unitComp = entity.getComponent<Unit>(Unit);
+    if (!unitComp) return;
+
+    for (const upgrade of upgrades) {
+      const upgradeStats = UPGRADE_STATS[upgrade];
+      if (!upgradeStats?.effect) continue;
+
+      const isInfantry = category === UnitCategory.INFANTRY || category === UnitCategory.WORKER;
+      const isVehicle = category === UnitCategory.VEHICLE;
+
+      const isInfantryUpgrade = upgrade.startsWith('INFANTRY_');
+      const isVehicleUpgrade = upgrade.startsWith('VEHICLE_');
+
+      if ((isInfantry && isInfantryUpgrade) || (isVehicle && isVehicleUpgrade)) {
+        if (upgradeStats.effect.damageBonus) {
+          unitComp.damage += upgradeStats.effect.damageBonus;
+          unitComp.baseDamage += upgradeStats.effect.damageBonus;
+        }
+        if (upgradeStats.effect.armorBonus) {
+          unitComp.armor += upgradeStats.effect.armorBonus;
+        }
+      }
+
+      if (upgrade === UpgradeType.EXTENDED_RANGE && unitComp.unitType === UnitType.TROOPER) {
+        unitComp.range += upgradeStats.effect.rangeBonus || 0;
+        unitComp.baseRange += upgradeStats.effect.rangeBonus || 0;
+      }
+    }
   }
 }

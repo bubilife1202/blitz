@@ -17,7 +17,7 @@ import { ResearchQueue } from './components/ResearchQueue';
 import { Selectable } from './components/Selectable';
 import { Resource } from './components/Resource';
 import { UnitType, BuildingType, UnitCategory, AIDifficulty, ResourceType, type PlayerId } from '@shared/types';
-import { UNIT_STATS, BUILDING_STATS, canBuildBuilding, canTrainUnit } from '@shared/constants';
+import { UNIT_STATS, BUILDING_STATS, canBuildBuilding, canTrainUnit, secondsToTicks } from '@shared/constants';
 
 export enum AIState {
   BUILDING_UP = 'building_up',
@@ -138,7 +138,7 @@ export class AIController {
     const enemyCCCount = this.getEnemyCommandCenters().length;
     const hasFastUnits = combatUnits.some(unit => {
       const info = unit.getComponent<Unit>(Unit);
-      return info && (info.unitType === UnitType.VULTURE || info.unitType === UnitType.MARINE);
+      return info && (info.unitType === UnitType.SPEEDER || info.unitType === UnitType.TROOPER);
     });
 
     if (powerRatio < 0.8 || combatUnits.length < Math.max(3, Math.floor(this.minAttackUnits * 0.6))) {
@@ -192,9 +192,7 @@ export class AIController {
     const resources = this.gameState.getPlayerResources(this.playerId);
     if (!resources) return;
 
-    if (this.handleDefense(currentTick)) {
-      return;
-    }
+    const isDefending = this.handleDefense(currentTick);
 
     this.handleRetreat(currentTick);
 
@@ -227,8 +225,9 @@ export class AIController {
 
     this.updateHarassSquad(currentTick);
 
-    // 전략별 공격 로직
-    this.executeStrategy(currentTick);
+    if (!isDefending) {
+      this.executeStrategy(currentTick);
+    }
   }
 
   private handleDefense(currentTick: number): boolean {
@@ -353,13 +352,13 @@ export class AIController {
     const barracksCount = buildingTypes.filter(t => t === BuildingType.BARRACKS).length;
     const factoryCount = buildingTypes.filter(t => t === BuildingType.FACTORY).length;
     const hasArmory = buildingTypes.includes(BuildingType.ARMORY);
-    const hasEngineeringBay = buildingTypes.includes(BuildingType.ENGINEERING_BAY);
+    const hasEngineeringBay = buildingTypes.includes(BuildingType.TECH_LAB);
     const refineryCount = buildingTypes.filter(t => t === BuildingType.REFINERY).length;
     
     // 서플라이 막힘 체크 - 최우선
     if (resources.supply >= resources.supplyMax - 2) {
-      if (resources.minerals >= BUILDING_STATS[BuildingType.SUPPLY_DEPOT].mineralCost) {
-        this.planBuilding(BuildingType.SUPPLY_DEPOT);
+      if (resources.minerals >= BUILDING_STATS[BuildingType.DEPOT].mineralCost) {
+        this.planBuilding(BuildingType.DEPOT);
         return;
       }
     }
@@ -381,8 +380,8 @@ export class AIController {
     }
     
     // Engineering Bay 건설 (테크 진행)
-    if (!hasEngineeringBay && barracksCount > 0 && resources.minerals >= BUILDING_STATS[BuildingType.ENGINEERING_BAY].mineralCost) {
-      this.planBuilding(BuildingType.ENGINEERING_BAY);
+    if (!hasEngineeringBay && barracksCount > 0 && resources.minerals >= BUILDING_STATS[BuildingType.TECH_LAB].mineralCost) {
+      this.planBuilding(BuildingType.TECH_LAB);
       return;
     }
     
@@ -484,7 +483,7 @@ export class AIController {
     
     // 기존 커맨드센터 위치 찾기
     const commandCenter = this.getMyBuildings().find(b => 
-      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ
     );
     
     if (!commandCenter) return null;
@@ -615,7 +614,7 @@ export class AIController {
       
       for (let dy = 0; dy < stats.size.height; dy++) {
         for (let dx = 0; dx < stats.size.width; dx++) {
-          this.pathfinding.setObstacle(tileX + dx - 1, tileY + dy - 1);
+          this.pathfinding.setObstacle(tileX + dx, tileY + dy);
         }
       }
     }
@@ -639,25 +638,25 @@ export class AIController {
       if (!queue.canQueue()) continue;
 
       // 커맨드센터: SCV 생산
-      if (buildingComp.buildingType === BuildingType.COMMAND_CENTER) {
+      if (buildingComp.buildingType === BuildingType.HQ) {
         const scvCount = this.getMyUnits().filter(u => 
-          u.getComponent<Unit>(Unit)?.unitType === UnitType.SCV
+          u.getComponent<Unit>(Unit)?.unitType === UnitType.ENGINEER
         ).length;
 
-        if (scvCount < 12 && this.canAffordUnit(UnitType.SCV, resources)) {
-          this.trainUnit(queue, UnitType.SCV, resources);
+        if (scvCount < 12 && this.canAffordUnit(UnitType.ENGINEER, resources)) {
+          this.trainUnit(queue, UnitType.ENGINEER, resources);
         }
       }
       
       // 배럭: 보병 생산
       if (buildingComp.buildingType === BuildingType.BARRACKS) {
         // 우선순위: Marine > Firebat > Medic
-        if (this.canAffordUnit(UnitType.MARINE, resources) && canTrainUnit(UnitType.MARINE, buildingTypes)) {
-          this.trainUnit(queue, UnitType.MARINE, resources);
-        } else if (this.canAffordUnit(UnitType.FIREBAT, resources) && canTrainUnit(UnitType.FIREBAT, buildingTypes)) {
+        if (this.canAffordUnit(UnitType.TROOPER, resources) && canTrainUnit(UnitType.TROOPER, buildingTypes)) {
+          this.trainUnit(queue, UnitType.TROOPER, resources);
+        } else if (this.canAffordUnit(UnitType.PYRO, resources) && canTrainUnit(UnitType.PYRO, buildingTypes)) {
           // 파이어뱃은 가스가 충분할 때만
           if (resources.gas >= 50) {
-            this.trainUnit(queue, UnitType.FIREBAT, resources);
+            this.trainUnit(queue, UnitType.PYRO, resources);
           }
         }
       }
@@ -665,10 +664,10 @@ export class AIController {
       // 팩토리: 차량 생산
       if (buildingComp.buildingType === BuildingType.FACTORY) {
         // Vulture 우선 (가스 안 씀)
-        if (this.canAffordUnit(UnitType.VULTURE, resources) && canTrainUnit(UnitType.VULTURE, buildingTypes)) {
-          this.trainUnit(queue, UnitType.VULTURE, resources);
-        } else if (this.canAffordUnit(UnitType.SIEGE_TANK, resources) && canTrainUnit(UnitType.SIEGE_TANK, buildingTypes)) {
-          this.trainUnit(queue, UnitType.SIEGE_TANK, resources);
+        if (this.canAffordUnit(UnitType.SPEEDER, resources) && canTrainUnit(UnitType.SPEEDER, buildingTypes)) {
+          this.trainUnit(queue, UnitType.SPEEDER, resources);
+        } else if (this.canAffordUnit(UnitType.ARTILLERY, resources) && canTrainUnit(UnitType.ARTILLERY, buildingTypes)) {
+          this.trainUnit(queue, UnitType.ARTILLERY, resources);
         }
       }
     }
@@ -684,7 +683,7 @@ export class AIController {
   private trainUnit(queue: ProductionQueue, unitType: UnitType, _resources: { minerals: number; gas: number; supply: number; supplyMax: number }): void {
     const stats = UNIT_STATS[unitType];
     
-    queue.addToQueue(unitType, stats.buildTime);
+    queue.addToQueue(unitType, secondsToTicks(stats.buildTime));
     this.gameState.modifyPlayerResources(this.playerId, {
       minerals: -stats.mineralCost,
       gas: -stats.gasCost,
@@ -730,7 +729,7 @@ export class AIController {
       const gatherer = u.getComponent<Gatherer>(Gatherer);
       const movement = u.getComponent<Movement>(Movement);
       
-      if (unit?.unitType !== UnitType.SCV) return false;
+      if (unit?.unitType !== UnitType.ENGINEER) return false;
       if (gatherer?.state !== GathererState.IDLE) return false;
       if (movement?.isMoving) return false;
       
@@ -769,7 +768,7 @@ export class AIController {
         .filter((id): id is number => typeof id === 'number')
     );
 
-    const myCC = this.getMyBuildings().find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const myCC = this.getMyBuildings().find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ);
     const ccPos = myCC?.getComponent<Position>(Position);
     if (!ccPos) return null;
 
@@ -892,12 +891,12 @@ export class AIController {
   private findEnemyCommandCenter(): Entity | null {
     return this.getEnemyEntities().find(e => {
       const building = e.getComponent<Building>(Building);
-      return building?.buildingType === BuildingType.COMMAND_CENTER;
+      return building?.buildingType === BuildingType.HQ;
     }) || null;
   }
 
   private findDefensePoint(): { x: number; y: number } | null {
-    const myCC = this.getMyBuildings().find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const myCC = this.getMyBuildings().find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ);
     const ccPos = myCC?.getComponent<Position>(Position);
     if (!ccPos) return null;
 
@@ -910,7 +909,7 @@ export class AIController {
   }
 
   private getBasePosition(): { x: number; y: number } | null {
-    const myCC = this.getMyBuildings().find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER);
+    const myCC = this.getMyBuildings().find(b => b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ);
     const ccPos = myCC?.getComponent<Position>(Position);
     if (!ccPos) return null;
     return { x: ccPos.x, y: ccPos.y };
@@ -919,7 +918,7 @@ export class AIController {
   private getEnemyCommandCenters(): Entity[] {
     return this.getEnemyEntities().filter(e => {
       const building = e.getComponent<Building>(Building);
-      return building?.buildingType === BuildingType.COMMAND_CENTER;
+      return building?.buildingType === BuildingType.HQ;
     });
   }
 
@@ -961,7 +960,7 @@ export class AIController {
       const position = building.getComponent<Position>(Position);
       
       if (!buildingComp || !position) continue;
-      if (buildingComp.buildingType !== BuildingType.COMMAND_CENTER) continue;
+      if (buildingComp.buildingType !== BuildingType.HQ) continue;
       if (buildingComp.isConstructing) continue;
       
       const dist = Math.sqrt(Math.pow(x - position.x, 2) + Math.pow(y - position.y, 2));
@@ -1030,7 +1029,7 @@ export class AIController {
     const fastUnits = combatUnits
       .filter(u => {
         const unit = u.getComponent<Unit>(Unit);
-        return unit && (unit.unitType === UnitType.VULTURE || unit.unitType === UnitType.MARINE);
+        return unit && (unit.unitType === UnitType.SPEEDER || unit.unitType === UnitType.TROOPER);
       })
       .slice(0, 2);
     
@@ -1039,7 +1038,7 @@ export class AIController {
     // 적 일꾼 찾기
     const enemyWorkers = this.getEnemyEntities().filter(e => {
       const unit = e.getComponent<Unit>(Unit);
-      return unit?.unitType === UnitType.SCV;
+      return unit?.unitType === UnitType.ENGINEER;
     });
     
     if (enemyWorkers.length === 0) return;
@@ -1077,7 +1076,7 @@ export class AIController {
     
     // 적 커맨드센터 위치 찾기
     const enemyCC = enemyBuildings.find(b => 
-      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ
     );
     
     if (!enemyCC) return;
@@ -1090,7 +1089,7 @@ export class AIController {
     
     // 내 베이스와 적 베이스 중간 지점
     const myCC = this.getMyBuildings().find(b => 
-      b.getComponent<Building>(Building)?.buildingType === BuildingType.COMMAND_CENTER
+      b.getComponent<Building>(Building)?.buildingType === BuildingType.HQ
     );
     const myPos = myCC?.getComponent<Position>(Position);
     
@@ -1164,7 +1163,7 @@ export class AIController {
     if (building) {
       if ([BuildingType.BARRACKS, BuildingType.FACTORY].includes(building.buildingType)) {
         score += 120;
-      } else if (building.buildingType === BuildingType.COMMAND_CENTER) {
+      } else if (building.buildingType === BuildingType.HQ) {
         score += 110;
       } else if (BUILDING_STATS[building.buildingType].isDefense) {
         score += 70;
@@ -1172,7 +1171,7 @@ export class AIController {
         score += 60;
       }
     } else if (unit) {
-      if (unit.unitType === UnitType.SCV) {
+      if (unit.unitType === UnitType.ENGINEER) {
         score += 75;
       } else {
         score += 50;
@@ -1245,14 +1244,14 @@ export class AIController {
   private getCombatUnits(): Entity[] {
     return this.getMyUnits().filter(u => {
       const unit = u.getComponent<Unit>(Unit);
-      return unit && unit.unitType !== UnitType.SCV && UNIT_STATS[unit.unitType].category !== UnitCategory.WORKER;
+      return unit && unit.unitType !== UnitType.ENGINEER && UNIT_STATS[unit.unitType].category !== UnitCategory.WORKER;
     });
   }
 
   private getEnemyCombatUnits(): Entity[] {
     return this.getEnemyEntities().filter(e => {
       const unit = e.getComponent<Unit>(Unit);
-      return unit && unit.unitType !== UnitType.SCV && UNIT_STATS[unit.unitType].category !== UnitCategory.WORKER;
+      return unit && unit.unitType !== UnitType.ENGINEER && UNIT_STATS[unit.unitType].category !== UnitCategory.WORKER;
     });
   }
 

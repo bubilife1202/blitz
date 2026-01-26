@@ -29,17 +29,17 @@ const PLAYER_TINTS: Record<PlayerId, number> = {
 
 // 유닛 타입별 스프라이트 매핑 (플레이어 1 / 플레이어 2)
 const UNIT_SPRITES: Record<UnitType, { p1: string; p2: string; scale: number }> = {
-  [UnitType.SCV]: { 
+  [UnitType.ENGINEER]: { 
     p1: 'scifiUnit_01.png', 
     p2: 'scifiUnit_12.png',
     scale: 1.2
   },
-  [UnitType.MARINE]: { 
+  [UnitType.TROOPER]: { 
     p1: 'scifiUnit_02.png', 
     p2: 'scifiUnit_13.png',
     scale: 1.2
   },
-  [UnitType.FIREBAT]: { 
+  [UnitType.PYRO]: { 
     p1: 'scifiUnit_03.png', 
     p2: 'scifiUnit_14.png',
     scale: 1.2
@@ -49,17 +49,17 @@ const UNIT_SPRITES: Record<UnitType, { p1: string; p2: string; scale: number }> 
     p2: 'scifiUnit_15.png',
     scale: 1.2
   },
-  [UnitType.VULTURE]: { 
+  [UnitType.SPEEDER]: { 
     p1: 'scifiUnit_07.png', 
     p2: 'scifiUnit_19.png',
     scale: 1.0
   },
-  [UnitType.SIEGE_TANK]: { 
+  [UnitType.ARTILLERY]: { 
     p1: 'scifiUnit_09.png', 
     p2: 'scifiUnit_21.png',
     scale: 0.9
   },
-  [UnitType.GOLIATH]: { 
+  [UnitType.WALKER]: { 
     p1: 'scifiUnit_08.png', 
     p2: 'scifiUnit_20.png',
     scale: 1.0
@@ -229,7 +229,7 @@ export class UnitRenderer {
       const spriteConfig = UNIT_SPRITES[unit.unitType];
       
       // 시즈 모드일 때 다른 스프라이트 사용
-      if (unit.unitType === UnitType.SIEGE_TANK && unit.isSieged) {
+      if (unit.unitType === UnitType.ARTILLERY && unit.isSieged) {
         const siegeFrame = playerId === 1 ? 'scifiUnit_10.png' : 'scifiUnit_22.png';
         visual.sprite.setFrame(siegeFrame);
       } else {
@@ -319,7 +319,7 @@ export class UnitRenderer {
     }
     
     // 시즈 모드 효과
-    if (unit.unitType === UnitType.SIEGE_TANK && unit.isSieged) {
+    if (unit.unitType === UnitType.ARTILLERY && unit.isSieged) {
       const siegePulse = 0.3 + Math.sin(time * 2) * 0.15;
       visual.effectsGraphics.lineStyle(2, 0xff4400, siegePulse);
       visual.effectsGraphics.strokeCircle(0, 0, 25);
