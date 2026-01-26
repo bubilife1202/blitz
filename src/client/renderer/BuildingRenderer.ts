@@ -212,24 +212,33 @@ export class BuildingRenderer {
     visual.selectionRect.clear();
     if (selectable?.isSelected) {
       const selColor = playerId === this.localPlayerId ? 0x00ff00 : 0xff0000;
-      visual.selectionRect.lineStyle(3, selColor, 1);
-      visual.selectionRect.strokeRect(-width / 2 - 2, -height / 2 - 2, width + 4, height + 4);
       
-      // 코너 강조
-      const cornerSize = 8;
-      visual.selectionRect.lineStyle(3, 0xffffff, 1);
+      // 메인 사각형 (두껍게)
+      visual.selectionRect.lineStyle(3, selColor, 0.8);
+      visual.selectionRect.strokeRect(-width / 2 - 4, -height / 2 - 4, width + 8, height + 8);
+      
+      // 외곽 글로우
+      visual.selectionRect.lineStyle(2, selColor, 0.3);
+      visual.selectionRect.strokeRect(-width / 2 - 6, -height / 2 - 6, width + 12, height + 12);
+      
+      // 코너 강조 (흰색 펄스)
+      const time = Date.now() / 200;
+      const pulse = 0.6 + Math.sin(time) * 0.4;
+      const cornerSize = 10;
+      visual.selectionRect.lineStyle(3, 0xffffff, pulse);
+      
       // 좌상
-      visual.selectionRect.lineBetween(-width / 2 - 2, -height / 2 - 2, -width / 2 - 2 + cornerSize, -height / 2 - 2);
-      visual.selectionRect.lineBetween(-width / 2 - 2, -height / 2 - 2, -width / 2 - 2, -height / 2 - 2 + cornerSize);
+      visual.selectionRect.lineBetween(-width / 2 - 4, -height / 2 - 4, -width / 2 - 4 + cornerSize, -height / 2 - 4);
+      visual.selectionRect.lineBetween(-width / 2 - 4, -height / 2 - 4, -width / 2 - 4, -height / 2 - 4 + cornerSize);
       // 우상
-      visual.selectionRect.lineBetween(width / 2 + 2 - cornerSize, -height / 2 - 2, width / 2 + 2, -height / 2 - 2);
-      visual.selectionRect.lineBetween(width / 2 + 2, -height / 2 - 2, width / 2 + 2, -height / 2 - 2 + cornerSize);
+      visual.selectionRect.lineBetween(width / 2 + 4 - cornerSize, -height / 2 - 4, width / 2 + 4, -height / 2 - 4);
+      visual.selectionRect.lineBetween(width / 2 + 4, -height / 2 - 4, width / 2 + 4, -height / 2 - 4 + cornerSize);
       // 좌하
-      visual.selectionRect.lineBetween(-width / 2 - 2, height / 2 + 2 - cornerSize, -width / 2 - 2, height / 2 + 2);
-      visual.selectionRect.lineBetween(-width / 2 - 2, height / 2 + 2, -width / 2 - 2 + cornerSize, height / 2 + 2);
+      visual.selectionRect.lineBetween(-width / 2 - 4, height / 2 + 4 - cornerSize, -width / 2 - 4, height / 2 + 4);
+      visual.selectionRect.lineBetween(-width / 2 - 4, height / 2 + 4, -width / 2 - 4 + cornerSize, height / 2 + 4);
       // 우하
-      visual.selectionRect.lineBetween(width / 2 + 2, height / 2 + 2 - cornerSize, width / 2 + 2, height / 2 + 2);
-      visual.selectionRect.lineBetween(width / 2 + 2 - cornerSize, height / 2 + 2, width / 2 + 2, height / 2 + 2);
+      visual.selectionRect.lineBetween(width / 2 + 4, height / 2 + 4 - cornerSize, width / 2 + 4, height / 2 + 4);
+      visual.selectionRect.lineBetween(width / 2 + 4 - cornerSize, height / 2 + 4, width / 2 + 4, height / 2 + 4);
     }
 
     // HP 바

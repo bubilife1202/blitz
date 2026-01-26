@@ -351,12 +351,20 @@ export class UnitRenderer {
     visual.selectionCircle.clear();
     if (selectable?.isSelected) {
       const selColor = playerId === this.localPlayerId ? 0x00ff00 : 0xff0000;
-      visual.selectionCircle.lineStyle(2, selColor, 1);
+      
+      // 메인 선택 원 (더 두껍고 선명하게)
+      visual.selectionCircle.lineStyle(3, selColor, 0.8);
       visual.selectionCircle.strokeCircle(0, 0, 18);
       
-      // 선택 시 깜빡임 효과
-      visual.selectionCircle.lineStyle(1, 0xffffff, 0.5);
-      visual.selectionCircle.strokeCircle(0, 0, 20);
+      // 외곽 글로우 효과 (더 크고 투명하게)
+      visual.selectionCircle.lineStyle(2, selColor, 0.3);
+      visual.selectionCircle.strokeCircle(0, 0, 22);
+      
+      // 내부 펄스 효과 (흰색)
+      const time = Date.now() / 200;
+      const pulse = 0.5 + Math.sin(time) * 0.2;
+      visual.selectionCircle.lineStyle(1, 0xffffff, pulse);
+      visual.selectionCircle.strokeCircle(0, 0, 18);
     }
 
     // HP 바
